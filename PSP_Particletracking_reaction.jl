@@ -3,9 +3,9 @@ import StatsBase as sb
 import LinearAlgebra as la
 import Statistics as st
 
-# Random.seed!(12345) #setting a seed
+Random.seed!(12345) #setting a seed
 
-n=5 #a convinent method of increascing resolution while maintaining 
+n=9 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
 
 np = n*n*1000 # number of particles
@@ -26,7 +26,7 @@ end
 C_0 = 1.2  # rate parameter for velocity change
 B=(1.5*C_0) #for reducing the langevin to a standard form - part of boundary conditions implementaion from Erban and Chapman 06
 x_res=n #number of cells in x dim
-y_res=ceil(Int, n/2);
+y_res=ceil(Int, n/2)
 
 bc_k=1
 omega_mean=10
@@ -285,8 +285,38 @@ for t in 1:nt
     T=zeros(2,2)
     T[:,1] = e_1  #coord transform matrix
     T[:,2] = e_2
-    println(typeof(T))
     dphi = T\dphi  #transform to new coords
+    #performing adjustment to mean 0
+    corr_factor = zeros(2,np)
+    for i in 1:y_res
+        in_y = y_edges[i].<=yp[:,t+1].<y_edges[i+1]
+        for j in 1:x_res
+            in_x = x_edges[j].<=xp[:,t+1].<x_edges[j+1]
+            cell_particles = findall(in_x.&in_y)
+            for phi_i=1:2
+                cell_points_pos = dphi[phi_i,cell_particles].>0
+                phi_mean = mean(dphi[phi_i,cell_particles])
+                phi_pos_mean = mean(cell_points_pos.*dphi[phi_i,cell_particles])
+                phi_neg_mean = mean((1 .- cell_points_pos).*dphi[phi_i,cell_particles])
+                if phi_mean>0
+                    corr_factor[phi_i,cell_particles]=.-cell_points_pos*(phi_neg_mean./phi_pos_mean) + (1 .- cell_points_pos)
+                else
+                    corr_factor[phi_i,cell_particles]=.-(1 .- cell_points_pos)*(phi_pos_mean./phi_neg_mean) + cell_points_pos
+                end
+            end
+        end
+    end
+    dphi = corr_factor.*dphi;
+    dphi = T*dphi #return to old coords
+
+    phip[:,:,t+1] = phip[:,:,t]+dphi
+    phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
+
+    assign_f_phi(t)
+    println(maximum(f_phi[:,:,:,:,t]))
+    println(minimum(f_phi[:,:,:,:,t]),'\n')
+
 end
 
+write("new_reaction_aved_5_flux", f_phi)
 print("Success")
