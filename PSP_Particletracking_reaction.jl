@@ -71,15 +71,15 @@ end
 function assign_pm_single(particles::Vector{Int}, cell_points::Vector{Int}, index_tbc::Int, time_index::Int)
     known_index = 1-(index_tbc-1)+1 #flips 1 to 2 and 2 to 1
     for particle in particles
-        count = 0
+        cell_points_set = Set(cell_points)
         while true
-            count = count+1
-            try_pm = sb.sample(cell_points,1,replace=false) 
+            try_pm = rand(cell_points_set) 
             test_dot = la.dot((phip[:,try_pm[1],time_index]-phip[:,particle,time_index]),(phip[:,known_index,time_index]-phip[:,particle,time_index]))
             if  test_dot<= 0
                 phi_pm[index_tbc,particle] = try_pm[1]
                 break
             end
+            setdiff!(cell_points_set,try_pm)
         end
     end
 end
