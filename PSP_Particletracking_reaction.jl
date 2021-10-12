@@ -5,21 +5,21 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-n=9 #a convinent method of increascing resolution while maintaining 
+n=11 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
 
-np = n*n*1000 # number of particles
+np = n*n*4000 # number of particles
 dt = 0.01  # time step
-nt = 20   # number of time steps
-length_domain = 320 #length of periodic element
-height_domain = 320
+nt = 100   # number of time steps
+length_domain = 1 #length of periodic element
+height_domain = 1
 phi_domain = [0,1.2]
 omega_shape_init = 0.25
 omega_sigma_2 = 0.25
 psi_partions_num = 20 #number of partitions in 1 state space direction
 c_phi = 1.2
 c_t = 2
-u_max = 0.06
+u_max = 1
 function u_mean(y)
     -4*u_max.*y.*(y.-height_domain)./height_domain^2
 end
@@ -313,10 +313,8 @@ for t in 1:nt
     phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
 
     assign_f_phi(t)
-    println(maximum(f_phi[:,:,:,:,t]))
-    println(minimum(f_phi[:,:,:,:,t]),'\n')
 
 end
 
-write("new_reaction_aved_5_flux", f_phi)
+write("new_reaction_aved", f_phi)
 print("Success")
