@@ -13,7 +13,7 @@ dt = 0.01  # time step
 nt = 100   # number of time steps
 length_domain = 1 #length of periodic element
 height_domain = 1
-phi_domain = [0,1.2]
+phi_domain = [-1.2,1.2]
 omega_shape_init = 0.25
 omega_sigma_2 = 0.25
 psi_partions_num = 20 #number of partitions in 1 state space direction
@@ -21,26 +21,40 @@ c_phi = 1.2
 c_t = 2
 u_max = 1
 function u_mean(y)
-    -4*u_max.*y.*(y.-height_domain)./height_domain^2
+    u_max.*ones(np)#-4*u_max.*y.*(y.-height_domain)./height_domain^2
 end
 C_0 = 1.2  # rate parameter for velocity change
 B=(1.5*C_0) #for reducing the langevin to a standard form - part of boundary conditions implementaion from Erban and Chapman 06
 x_res=n #number of cells in x dim
 y_res=ceil(Int, n/2)
+Initial_condition = "triple delta"
 
 bc_k=1
 omega_mean=10
 turb_e_init=1
 T_omega = 1/(omega_mean); #approximation to frequency timescale
-
-#ititialising position
-xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
-yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 phip = zeros((2, np, nt+1)) #scalar concentration at these points
 
-#ititialising at 1 for phi_1 for 1-D testing
-phip[2,:,1] = 0.001*randn((np,1)) #pdf can't find zeros
-phip[1,:,1] .= 1;
+#ititialising position
+if Initial_condition == "Uniform phi_1"
+    xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
+    yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
+    #ititialising at 1 for phi_1 for 1-D testing
+    phip[2,:,1] = 0.001*randn((np)) #pdf can't find zeros
+    phip[1,:,1] .= 1;
+elseif Initial_condition == "triple delta"
+    local delta_selector = rand(1:3, np)
+    local noise_term = randn(np)
+
+    phip[1,delta_selector.=1,1] = -sqrt(3)/2 .+0.001 .*noise_term[delta_selector.=1]
+    phip[2,delta_selector.=1,1] .= -0.5
+
+    phip[1,delta_selector.=2,1] = sqrt(3)/2 .+0.001 .*noise_term[delta_selector.=2]
+    phip[2,delta_selector.=2,1] .= -0.5
+
+    phip[1,delta_selector.=3,1] .= 0.001
+    phip[2,delta_selector.=3,1] = 1.0 .+0.001 .*noise_term[delta_selector.=3]
+end
 
 omegap = zeros(np,nt+1) #turbulence frequency
 omega0_dist = Gamma(omega_mean/omega_shape_init,omega_shape_init)
@@ -310,11 +324,13 @@ for t in 1:nt
     dphi = T*dphi #return to old coords
 
     phip[:,:,t+1] = phip[:,:,t]+dphi
-    phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
+    if !(Initial_condition == "triple delta")
+        phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
+    end
 
     assign_f_phi(t)
 
 end
 
-write("new_reaction_aved", f_phi)
+write("new_reaction_tri_del", f_phi)
 print("Success")
