@@ -5,14 +5,14 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-n=11 #a convinent method of increascing resolution while maintaining 
+n=19 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
 
-np = n*n*4000 # number of particles
+np = n*n*1000 # number of particles
 dt = 0.01  # time step
 nt = 100   # number of time steps
 length_domain = 1 #length of periodic element
-height_domain = 1
+height_domain = 0.5
 phi_domain = [-1.2,1.2]
 omega_shape_init = 0.25
 omega_sigma_2 = 0.25
@@ -93,15 +93,21 @@ end
 function assign_pm_single(particles::Vector{Int}, cell_points::Vector{Int}, index_tbc::Int, time_index::Int)
     known_index = 1-(index_tbc-1)+1 #flips 1 to 2 and 2 to 1
     for particle in particles
+        !in(particle, cell_points) && throw(ArgumentError("Particles must be in cell"))
         cell_points_set = Set(cell_points)
         while true
             try_pm = rand(cell_points_set) 
-            test_dot = la.dot((phip[:,try_pm[1],time_index]-phip[:,particle,time_index]),(phip[:,known_index,time_index]-phip[:,particle,time_index]))
+            test_dot = la.dot((phip[:,try_pm[1],time_index]-phip[:,particle,time_index]),(phip[:,phi_pm[known_index,particle],time_index]-phip[:,particle,time_index]))
             if  test_dot<= 0
                 phi_pm[index_tbc,particle] = try_pm[1]
                 break
             end
             setdiff!(cell_points_set,try_pm)
+            if isempty(cell_points_set)
+                println(particle, ' ',time_index,' ',particle in cell_points,' ',phi_pm[known_index,particle])
+                println(la.dot((phip[:,particle,time_index]-phip[:,particle,time_index]),(phip[:,phi_pm[known_index,particle],time_index]-phip[:,particle,time_index])))
+                print(' ', phip[:,particle,time_index]-phip[:,particle,time_index], ' ', phip[:,phi_pm[known_index,particle],time_index]-phip[:,particle,time_index])
+            end
         end
     end
 end
@@ -277,15 +283,16 @@ for t in 1:nt
             if 0 in cell_particles
                 print("0 in cell_particles ", i,j,' ',t,'\n')
             end
+            (length(cell_particles)==0) && throw(BoundsError(cell_particles))
             #update pairs to ensure all are within the same bounds
             p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
             m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
             pm_nin = p_nin .& m_nin
             p_nin = xor.(p_nin , pm_nin)
             m_nin = xor.(m_nin , pm_nin)
-            assign_pm(cell_particles[pm_nin], cell_particles,t)
-            assign_pm_single(cell_particles[p_nin], cell_particles, 1, t)
-            assign_pm_single(cell_particles[m_nin], cell_particles, 2, t)
+            (sum(p_nin)>0)&&assign_pm_single(cell_particles[p_nin], cell_particles, 1, t)
+            (sum(m_nin)>0)&&assign_pm_single(cell_particles[m_nin], cell_particles, 2, t)
+            (sum(pm_nin)>0)&&assign_pm(cell_particles[pm_nin], cell_particles,t)
             t_decorr_p[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[1,cell_particles[pm_nin.&p_nin]],1])
             t_decorr_m[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[2,cell_particles[pm_nin.&m_nin]],2])
         end 
@@ -317,20 +324,26 @@ for t in 1:nt
             in_x = x_edges[j].<=xp[:,t+1].<x_edges[j+1]
             cell_particles = findall(in_x.&in_y)
             for phi_i=1:2
-                cell_points_pos = dphi[phi_i,cell_particles].>0
                 phi_mean = mean(dphi[phi_i,cell_particles])
-                phi_pos_mean = mean(cell_points_pos.*dphi[phi_i,cell_particles])
-                phi_neg_mean = mean((1 .- cell_points_pos).*dphi[phi_i,cell_particles])
-                if phi_mean>0
-                    corr_factor[phi_i,cell_particles]=.-cell_points_pos*(phi_neg_mean./phi_pos_mean) + (1 .- cell_points_pos)
-                else
-                    corr_factor[phi_i,cell_particles]=.-(1 .- cell_points_pos)*(phi_pos_mean./phi_neg_mean) + cell_points_pos
+                if phi_mean != 0
+                    cell_points_pos = dphi[phi_i,cell_particles].>0
+                    cell_points_neg = dphi[phi_i,cell_particles].<0
+                    phi_pos_mean = mean(cell_points_pos.*dphi[phi_i,cell_particles])
+                    phi_neg_mean = mean((cell_points_neg).*dphi[phi_i,cell_particles])
+                    if phi_mean>0
+                        corr_factor[phi_i,cell_particles]=.-cell_points_pos*(phi_neg_mean./phi_pos_mean) + (1 .- cell_points_pos)
+                        (any(isinf.(corr_factor[phi_i,cell_particles])) || any(isnan.(corr_factor[phi_i,cell_particles]))) && print(" +corr ")
+                    else
+                        corr_factor[phi_i,cell_particles]=.-(cell_points_neg)*(phi_pos_mean./phi_neg_mean) + (1 .- cell_points_neg)
+                        (any(isinf.(corr_factor[phi_i,cell_particles])) || any(isnan.(corr_factor[phi_i,cell_particles]))) && print(" -corr ")
+                    end
                 end
             end
         end
     end
-    dphi = corr_factor.*dphi;
+    dphi = corr_factor.*dphi
     dphi = T*dphi #return to old coords
+
 
     phip[:,:,t+1] = phip[:,:,t]+dphi
     if !(Initial_condition == "triple delta")
