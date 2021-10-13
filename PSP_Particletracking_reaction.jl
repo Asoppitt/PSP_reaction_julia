@@ -34,13 +34,13 @@ omega_mean=10
 turb_e_init=1
 T_omega = 1/(omega_mean); #approximation to frequency timescale
 phip = zeros((2, np, nt+1)) #scalar concentration at these points
+xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
+yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 
 #ititialising position
 if Initial_condition == "Uniform phi_1"
-    xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
-    yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
     #ititialising at 1 for phi_1 for 1-D testing
-    phip[2,:,1] = 0.001*randn((np)) #pdf can't find zeros
+    phip[2,:,1] = 0.001*randn(np) #pdf can't find zeros
     phip[1,:,1] .= 1;
 elseif Initial_condition == "triple delta"
     local delta_selector = rand(1:3, np)
@@ -54,6 +54,14 @@ elseif Initial_condition == "triple delta"
 
     phip[1,delta_selector.=3,1] .= 0.001
     phip[2,delta_selector.=3,1] = 1.0 .+0.001 .*noise_term[delta_selector.=3]
+elseif Initial_condition == "2 layers"
+    local noise_term = randn(np)
+
+    phip[2,yp.>0.5,1] = 0.001*noise_term(yp.>0.5) 
+    phip[1,yp.>0.5,1] .= 1;
+
+    phip[1,yp.<=0.5,1] = 0.001*noise_term(yp.<=0.5) 
+    phip[2,yp.<=0.5,1] .= 1;
 end
 
 omegap = zeros(np,nt+1) #turbulence frequency
@@ -162,6 +170,7 @@ function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
 end
 
 for t in 1:nt
+    println(t)
     #Using the SLM model for particle location
     for i in 1:y_res
         in_y = y_edges[i].<yp[:,t].<y_edges[i+1]
