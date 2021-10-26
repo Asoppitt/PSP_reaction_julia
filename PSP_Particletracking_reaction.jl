@@ -5,19 +5,21 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-n=8 #a convinent method of increascing resolution while maintaining 
+n=10 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
 
-np = n*n*4*5000 # number of particles
+x_res=n #number of cells in x dim
+y_res=2
+np = x_res*y_res*2000 # number of particles
 dt = 0.005  # time step
 nt = 60   # number of time steps
-length_domain = 0.18 #length of periodic element
-height_domain = 0.75
+length_domain = 0.10 #length of periodic element
+height_domain = 0.04
 phi_domain = [0,1.2]
 omega_shape_init = 0.25
 omega_sigma_2 = 0.25
 psi_partions_num = 20 #number of partitions in 1 state space direction
-c_phi = 1.2
+c_phi = 15
 c_t = 2
 u_max = 0
 function u_mean(y)
@@ -25,13 +27,15 @@ function u_mean(y)
 end
 C_0 = 10  # rate parameter for velocity change
 B=(1.5*C_0) #for reducing the langevin to a standard form - part of boundary conditions implementaion from Erban and Chapman 06
-x_res=n #number of cells in x dim
-y_res=4*n
-Initial_condition = "2 layers"
-PSP_off = true
+Initial_condition = "Uniform phi_1"
+PSP_off = false
 new_inflow = false
+CLT_limt = true
+#assuming each psp particle consists of a number of virtual particles with binary scalar values 
+#when bc is computed, the distribution absorbed is based on this number
+nvpart_per_part = Inf
 
-bc_k=0.75
+bc_k=0.25
 omega_mean=1
 turb_e_init=1.938
 T_omega = 1/(omega_mean); #approximation to frequency timescale
@@ -40,9 +44,11 @@ phip = zeros((2, np, nt+1)) #scalar concentration at these points
 xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
 yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 
+phi_eps = 10^(-8) #small non-zero phi, used to replace 0, as histogram requires phi>0
+
 if Initial_condition == "Uniform phi_1"
     function set_phi_as_ic(particles, nparticles, t_index)
-        phip[2,particles,t_index] = abs.(0.001*randn(nparticles)) #pdf can't find zeros
+        phip[2,particles,t_index] = abs.(phi_eps*randn(nparticles)) #pdf can't find zeros
         phip[1,particles,t_index] .= 1;
     end
 elseif Initial_condition == "triple delta"
@@ -50,24 +56,37 @@ elseif Initial_condition == "triple delta"
         local delta_selector = rand(1:3, nparticles)
         local noise_term = randn(nparticles)
 
-        phip[1,particles[delta_selector.=1],t_index] = -sqrt(3)/2 .+0.0001 .*noise_term[delta_selector.=1]
+        phip[1,particles[delta_selector.=1],t_index] = -sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=1]
         phip[2,particles[delta_selector.=1],t_index] .= -0.5
 
-        phip[1,particles[delta_selector.=2],t_index] = sqrt(3)/2 .+0.0001 .*noise_term[delta_selector.=2]
+        phip[1,particles[delta_selector.=2],t_index] = sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=2]
         phip[2,particles[delta_selector.=2],t_index] .= -0.5
 
-        phip[1,particles[delta_selector.=3],t_index] .= 0.0001
-        phip[2,particles[delta_selector.=3],t_index] = 1.0 .+0.0001 .*noise_term[delta_selector.=3]
+        phip[1,particles[delta_selector.=3],t_index] .= phi_eps
+        phip[2,particles[delta_selector.=3],t_index] = 1.0 .+phi_eps .*noise_term[delta_selector.=3]
     end
 elseif Initial_condition == "2 layers"
     function set_phi_as_ic(particles, nparticles, t_index)
         local noise_term = randn(nparticles)
+        # local uniform_noise = rand(nparticles).-0.5
 
-        phip[2,particles[yp[particles,1].>0.5*height_domain],t_index] = abs.(0.0001*noise_term[yp[particles,1].>0.5*height_domain] )
-        phip[1,particles[yp[particles,1].>0.5*height_domain],t_index] .= 1;
+        phip[2,particles[yp[particles,1].>0.5*height_domain],t_index] = abs.(phi_eps*noise_term[yp[particles,1].>0.5*height_domain] )
+        phip[1,particles[yp[particles,1].>0.5*height_domain],t_index] .= 1
 
-        phip[1,particles[yp[particles,1].<=0.5*height_domain],t_index] = abs.(0.0001*noise_term[yp[particles,1].<=0.5*height_domain] )
-        phip[2,particles[yp[particles,1].<=0.5*height_domain],t_index] .= 1;
+        phip[1,particles[yp[particles,1].<=0.5*height_domain],t_index] = abs.(phi_eps*noise_term[yp[particles,1].<=0.5*height_domain] )
+        phip[2,particles[yp[particles,1].<=0.5*height_domain],t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
+    end
+elseif Initial_condition == "double delta"
+    function set_phi_as_ic(particles, nparticles, t_index)
+        local noise_term = randn(nparticles)
+        local delta_selector = rand(1:2, nparticles)
+        # local uniform_noise = rand(nparticles).-0.5
+
+        phip[2,particles[delta_selector.==1],t_index] = abs.(phi_eps*noise_term[delta_selector.==1] )
+        phip[1,particles[delta_selector.==1],t_index] .= 1 #.+ uniform_noise[delta_selector.==1].*0.05
+
+        phip[1,particles[delta_selector.==2],t_index] = abs.(phi_eps*noise_term[delta_selector.==2] )
+        phip[2,particles[delta_selector.==2],t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
     end
 end
 set_phi_as_ic(1:np,np,1)
@@ -128,9 +147,9 @@ f_phi = zeros(psi_partions_num, psi_partions_num, y_res, x_res, nt+1) # histogra
 function assign_f_phi_cell(cell_points::Vector{Int}, cell_row::Int, cell_column::Int, t_index::Int)
     "use if cell_points has alreday been determined"
     for psi1_i=1:psi_partions_num
-        in_1 = psi_1[psi1_i].<phip[1,cell_points,t_index].<psi_1[psi1_i+1]
+        in_1 = psi_1[psi1_i].<=phip[1,cell_points,t_index].<psi_1[psi1_i+1]
         for psi2_i=1:psi_partions_num
-            in_2 = psi_2[psi2_i].<phip[2,cell_points,t_index].<psi_2[psi2_i+1]
+            in_2 = psi_2[psi2_i].<=phip[2,cell_points,t_index].<psi_2[psi2_i+1]
             f_phi[psi1_i, psi2_i, cell_row, cell_column, t_index] = sum(in_1.&in_2)
         end
     end
@@ -139,9 +158,9 @@ end
 
 function assign_f_phi(t_index::Int)
     for i in 1:y_res
-        in_y = y_edges[i].<yp[:,t_index].<y_edges[i+1]
+        in_y = y_edges[i].<=yp[:,t_index].<y_edges[i+1]
         for j in 1:x_res
-            in_x = x_edges[j].<xp[:,t_index].<x_edges[j+1]
+            in_x = x_edges[j].<=xp[:,t_index].<x_edges[j+1]
             cell_particles = findall(in_x.&in_y)
             assign_f_phi_cell(cell_particles, i, j, t_index)
         end 
@@ -164,22 +183,67 @@ end
 t_decorr_p = 1 ./(c_t.*omegap[phi_pm[1,:],1])
 t_decorr_m = 1 ./(c_t.*omegap[phi_pm[2,:],1])
 
-k= ones.*turb_e_init
+k= ones(np).*turb_e_init
 
 #intitial vaules of velocity, maintainingconsitancy with energy
 uxp = randn(np).*sqrt.(2/3*k)
 uyp = randn(np).*sqrt.(2/3*k)
 
-function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
-    abs_k = bc_k.*ones(np)
-    #K for Erban and Chapman approximation 
-    P = zeros(n_abs,2)
-    P[:,1] = abs_k[1,:].*sqrt.(B.*pi./(C_0.*k[abs_points]))
-    P[:,2] = abs_k[2,:].*sqrt.(B.*pi./(C_0.*k[abs_points]))
-    xi = rand(n_abs,2)
-    phip[1, abs_points[P[:,1].>xi[:,1]], t_index] .= 0.0001
-    phip[2, abs_points[P[:,2].>xi[:,2]], t_index] .= 0.0001
-    
+if nvpart_per_part==Inf
+    function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
+        abs_k = bc_k.*ones(2,n_abs)
+        #K for Erban and Chapman approximation 
+        P = zeros(2,n_abs)
+        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        ratios = 1 .-P #taking mean for limiting case
+        phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    end
+elseif nvpart_per_part==1
+    function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
+        abs_k = bc_k.*ones(2,n_abs)
+        #K for Erban and Chapman approximation 
+        P = zeros(2,n_abs)
+        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        xi = rand(2,n_abs)
+        phip[1, abs_points[(xi[1,:].<=P[1,:])], t_index] .= phi_eps
+        phip[1, abs_points[(xi[2,:].<=P[2,:])], t_index] .= phi_eps
+    end
+elseif !CLT_limt
+    #using binomal noise for small numbers of vparticles
+    function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
+        abs_k = bc_k.*ones(2,n_abs)
+        effective_v_particles =( phip[:, abs_points, t_index].*nvpart_per_part)
+        #K for Erban and Chapman approximation 
+        P = zeros(2,n_abs)
+        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        #Binomal dist for number of virtual particles to have reacted
+        xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
+        xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
+        ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
+        println("Effective particle count removed:",sum((1 .-ratios).*phip[:, abs_points, t_index]))
+        println("Target particle count for removal:", sum(P.*phip[:, abs_points, t_index]))
+        phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    end
+else
+    function bc_absorbtion(abs_points::Vector{Int}, n_abs::Int, t_index::Int)
+        abs_k = bc_k.*ones(2,n_abs)
+        effective_v_particles =( phip[:, abs_points, t_index].*nvpart_per_part)
+        #K for Erban and Chapman approximation 
+        P = zeros(2,n_abs)
+        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*k[abs_points])),1)
+        #by CLT approx dist for number of virtual particles to have reacted
+        xi = randn(2,n_abs).*sqrt.((P.*(1 .-P)))
+        #catching places where all mass has been removed
+        xi = [effective_v_particles[i,j]>0 ? xi[i,j]./sqrt(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
+        ratios = max.(min.((1 .-P) + xi,1),0)
+        println("Effective particle count removed:",sum((1 .-ratios).*phip[:, abs_points, t_index]))
+        println("Target particle count for removal:", sum(P.*phip[:, abs_points, t_index]))
+        phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    end
 end
 
 for t in 1:nt
@@ -315,7 +379,7 @@ for t in 1:nt
         phi_c = 0.5.*(phip[:,phi_pm[1,:],t]+phip[:,phi_pm[2,:],t])
         diffusion = zeros(2,np)
         diffusion[1,:] = c_phi.*0.5.*omegap[:,t].*(phip[1,:,t]-phi_c[1,:])
-        diffusion[1,:] = c_phi.*0.5.*omegap[:,t].*(phip[2,:,t]-phi_c[2,:])
+        diffusion[2,:] = c_phi.*0.5.*omegap[:,t].*(phip[2,:,t]-phi_c[2,:])
         reaction = zeros(2,np) # body reaction
         dphi = (-diffusion .+ reaction).*dt
 
@@ -369,5 +433,5 @@ for t in 1:nt
 
 end
 
-write("PSP_off_2_layers_aspersummer_c_0_10", f_phi)
+write("PSP_C15_uniform_1_thin_c_0_10_new_abs_inf_vp_CLT", f_phi)
 print("Success")
