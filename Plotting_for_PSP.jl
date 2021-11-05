@@ -1,15 +1,15 @@
-using Plots; plotly
+using Plots; GR.init()
 
 n=10
 nt = 60
-psi_partions_num = 20
+psi_partions_num = 100
 x_res=n #number of cells in x dim
 y_res=2
 in_data=zeros(psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
 length_domain = 0.18 #length of periodic element
 height_domain = 0.04
 dt=0.005
-read!("PSP_C15_uniform_1_thin_c_0_10_new_abs_inf_vp_CLT",in_data)
+read!("PSP_off_uniform_1_thin_c_0_21_k_08_w_100_new_abs_1_vp_CLT_100_psi",in_data)
 t_space = LinRange(0,nt*dt,nt)
 x_space = LinRange(0,length_domain,x_res)
 y_space = LinRange(0,height_domain,y_res)
@@ -24,11 +24,25 @@ x_integral_means = sum(phi_1_means, dims=2)[:,1,:] .* 1/x_res
 
 x_integral_f_phi_1 = sum(in_data,dims=[2,4])[:,1,:,1,:].* 1/x_res
 
-# surface(t_space,y_space,x_integral_means)
+surface(t_space,y_space,x_integral_means,ylabel="y",
+xlabel="t")
 # plot(y_space,x_integral_means[:,nt])
 # surface(x_space,y_space,phi_2_means[:,:,nt], ylabel="y")
-# surface(t_space,psi_spacing,x_integral_f_phi_1[:,1,:])
-plot(psi_spacing,x_integral_f_phi_1[:,1,nt], ylabel="Relative frequency", xlabel="ϕ",
-title="pdf of ϕ at time 0.3 for N → ∞ with PSP mixing")
-savefig("CLT_reaction_Ninf_PSP.png")
+# heatmap(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=50,
+# color= colormap("RdBu", logscale=true),
+# title="Contour Plot of ϕ denisty over time for N → ∞",
+# ylabel="ϕ",
+# xlabel="time",
+# colorbartitle="Relative frequency",)
+# contour(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=100, 
+# color= colormap("RdBu", logscale=true),
+# title="Contour Plot of ϕ denisty over time for N → ∞",
+# ylabel="ϕ",
+# xlabel="time",
+# colorbartitle="Relative frequency",
+# fill=true,
+# line=true)
+# plot(psi_spacing,x_integral_f_phi_1[:,1,20], ylabel="Relative frequency", xlabel="ϕ",
+# title="pdf of ϕ at time 0.3 for N = 1 with PSP mixing")
+# savefig("CLT_reaction_N1_PSP.png")
 # plot(t_space,x_integral_means[1,:])
