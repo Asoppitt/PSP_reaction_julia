@@ -1,4 +1,4 @@
-using OrdinaryDiffEq, ModelingToolkit, DiffEqOperators
+using OrdinaryDiffEq, ModelingToolkit, DiffEqOperators, Plots; plotlyjs()
 
 k = 0.938
 C_0 = 3 
@@ -10,12 +10,12 @@ height_domain =0.04
 
 nknots = 200
 h = height_domain/(nknots+1)
-knots = range(h, step=h, length=nknots)
+knots = range(0, step=h, length=nknots)
 ord_deriv = 2
 ord_approx = 2
 
 const Δ = D*CenteredDifference(ord_deriv, ord_approx, h, nknots)
-const bc = RobinBC((0.0,1.0,0.0),(0.0,1.0,-bc_k), h, ord_approx)
+const bc = RobinBC((-bc_k,D,0.0),(0.0,D,0.0), h, ord_approx)
 
 t0 = 0.0
 t1 = 0.3
