@@ -5,12 +5,13 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-n=10 #a convinent method of increascing resolution while maintaining 
+n=15 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
+filename="PSP_off_uniform_1_square_c_0_21_k_08_w_100_new_abs_1_vp_CLT"
 
 x_res=n #number of cells in x dim
-y_res=2
-np = x_res*y_res*2000 # number of particles
+y_res=n
+np = x_res*y_res*1000 # number of particles
 dt = 0.005  # time step
 nt = 60   # number of time steps
 length_domain = 0.10 #length of periodic element
@@ -19,25 +20,26 @@ phi_domain = [0,1.2]
 omega_shape_init = 0.25
 omega_sigma_2 = 0.25
 psi_partions_num = 20 #number of partitions in 1 state space direction
-c_phi = 15
+c_phi = 25
 c_t = 2
 u_max = 0
 function u_mean(y)
     u_max.*ones(np)#-4*u_max.*y.*(y.-height_domain)./height_domain^2
 end
-C_0 = 10  # rate parameter for velocity change
+C_0 = 2.1  # rate parameter for velocity change
 B=(1.5*C_0) #for reducing the langevin to a standard form - part of boundary conditions implementaion from Erban and Chapman 06
 Initial_condition = "Uniform phi_1"
-PSP_off = false
+PSP_off = true
 new_inflow = false
 CLT_limt = true
+record_BC_flux = false
 #assuming each psp particle consists of a number of virtual particles with binary scalar values 
-#when bc is computed, the distribution absorbed is based on this number
-nvpart_per_part = Inf
+#when bc is computed, the distribution absorbPSP_off_uniform_1_thin_c_0_21_k_08_w_100_new_abs_inf_vp_CLT_100_psied is based on this number
+nvpart_per_part = 1
 
 bc_k=0.25
-omega_mean=1
-turb_e_init=1.938
+omega_mean=100
+turb_e_init=0.938
 T_omega = 1/(omega_mean); #approximation to frequency timescale
 phip = zeros((2, np, nt+1)) #scalar concentration at these points
 #ititialising position
@@ -45,6 +47,9 @@ xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-directio
 yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 
 phi_eps = 10^(-8) #small non-zero phi, used to replace 0, as histogram requires phi>0
+
+record_BC_flux && (flux_y0 = zeros(2,x_res,nt))
+dphi_x_phi = (phi_domain/psi_partions_num)^2 #approx for the phi-space 2-D lebesgue measure that f_phi is defined wrt
 
 if Initial_condition == "Uniform phi_1"
     function set_phi_as_ic(particles, nparticles, t_index)
@@ -153,7 +158,7 @@ function assign_f_phi_cell(cell_points::Vector{Int}, cell_row::Int, cell_column:
             f_phi[psi1_i, psi2_i, cell_row, cell_column, t_index] = sum(in_1.&in_2)
         end
     end
-    f_phi[:, :, cell_row, cell_column, t_index] = f_phi[:, :, cell_row, cell_column, t_index]./length(cell_points)
+    f_phi[:, :, cell_row, cell_column, t_index] = f_phi[:, :, cell_row, cell_column, t_index]./(length(cell_points).*dphi_x_phi)
 end 
 
 function assign_f_phi(t_index::Int)
@@ -223,8 +228,6 @@ elseif !CLT_limt
         xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
         xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
         ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
-        println("Effective particle count removed:",sum((1 .-ratios).*phip[:, abs_points, t_index]))
-        println("Target particle count for removal:", sum(P.*phip[:, abs_points, t_index]))
         phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     end
 else
@@ -240,8 +243,6 @@ else
         #catching places where all mass has been removed
         xi = [effective_v_particles[i,j]>0 ? xi[i,j]./sqrt(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
         ratios = max.(min.((1 .-P) + xi,1),0)
-        println("Effective particle count removed:",sum((1 .-ratios).*phip[:, abs_points, t_index]))
-        println("Target particle count for removal:", sum(P.*phip[:, abs_points, t_index]))
         phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     end
 end
@@ -281,7 +282,7 @@ for t in 1:nt
     yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
     uyp[mag] = -uyp[mag] #reflecting velocity
 
-    # bc_absorbtion(mag, dim_mag, t) disabled to match paper
+    # bc_absorbtion(mag, dim_mag, t+1) disabled to match paper
 
     # Reflection at lower boundary y<0
     mag = findall(yp[:,t+1].<=0) # index of particle with yp>height_domain
@@ -294,7 +295,17 @@ for t in 1:nt
     yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
     uyp[mag] = -uyp[mag] #reflecting velocity
 
+    record_BC_flux && (missing_mass = phip[:,:,t])
     bc_absorbtion(mag, dim_mag[1], t)
+    if record_BC_flux
+        missing_mass -= phip[:,:,t]
+        in_y = y_edges[1].<yp[:,t].<y_edges[2] #is in lowest row?
+        for j in 1:x_res
+            in_x = x_edges[j].<xp[:,t].<x_edges[j+1]
+            cell_particles = findall(in_x.&in_y)
+            flux_y0[:,j,t] = mean(missing_mass[:,cell_particles],dims=2)[:,1]
+        end
+    end
 
     #bc at end (y=length_domain) of domain
     end_indicies = xp[:,t+1].>=length_domain #index of particle with xp>length
@@ -433,5 +444,6 @@ for t in 1:nt
 
 end
 
-write("PSP_C15_uniform_1_thin_c_0_10_new_abs_inf_vp_CLT", f_phi)
+write(filename, f_phi)
+record_BC_flux && write(filename*"flux", flux_y0)
 print("Success")
