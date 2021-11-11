@@ -5,9 +5,10 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-n=15 #a convinent method of increascing resolution while maintaining 
-    # resolution ratios and number of particles per cell
 filename="PSP_off_uniform_1_square_c_0_21_k_08_w_100_new_abs_1_vp_CLT"
+
+n=5 #a convinent method of increascing resolution while maintaining 
+    # resolution ratios and number of particles per cell
 
 x_res=n #number of cells in x dim
 y_res=n
@@ -49,7 +50,7 @@ yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 phi_eps = 10^(-8) #small non-zero phi, used to replace 0, as histogram requires phi>0
 
 record_BC_flux && (flux_y0 = zeros(2,x_res,nt))
-dphi_x_phi = (phi_domain/psi_partions_num)^2 #approx for the phi-space 2-D lebesgue measure that f_phi is defined wrt
+dphi_x_phi = ((phi_domain[2]-phi_domain[1])/psi_partions_num)^2 #approx for the phi-space 2-D lebesgue measure that f_phi is defined wrt
 
 if Initial_condition == "Uniform phi_1"
     function set_phi_as_ic(particles, nparticles, t_index)
@@ -158,7 +159,7 @@ function assign_f_phi_cell(cell_points::Vector{Int}, cell_row::Int, cell_column:
             f_phi[psi1_i, psi2_i, cell_row, cell_column, t_index] = sum(in_1.&in_2)
         end
     end
-    f_phi[:, :, cell_row, cell_column, t_index] = f_phi[:, :, cell_row, cell_column, t_index]./(length(cell_points).*dphi_x_phi)
+    f_phi[:, :, cell_row, cell_column, t_index] = f_phi[:, :, cell_row, cell_column, t_index]./(length(cell_points))
 end 
 
 function assign_f_phi(t_index::Int)
