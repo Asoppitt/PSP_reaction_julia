@@ -5,13 +5,13 @@ import Statistics as st
 
 Random.seed!(12345) #setting a seed
 
-filename="PSP_off_uniform_1_square_c_0_21_k_08_w_100_new_abs_1_vp_CLT"
+filename="Data/PSP_on_uniform_1_tallinreslonginspace_c_0_21_k_08_w_1_new_abs_80_vp_CLT"
 
-n=5 #a convinent method of increascing resolution while maintaining 
+n=10 #a convinent method of increascing resolution while maintaining 
     # resolution ratios and number of particles per cell
 
 x_res=n #number of cells in x dim
-y_res=n
+y_res=10*n
 np = x_res*y_res*1000 # number of particles
 dt = 0.005  # time step
 nt = 60   # number of time steps
@@ -33,13 +33,13 @@ Initial_condition = "Uniform phi_1"
 PSP_off = true
 new_inflow = false
 CLT_limt = true
-record_BC_flux = false
+record_BC_flux = true
 #assuming each psp particle consists of a number of virtual particles with binary scalar values 
-#when bc is computed, the distribution absorbPSP_off_uniform_1_thin_c_0_21_k_08_w_100_new_abs_inf_vp_CLT_100_psied is based on this number
-nvpart_per_part = 1
+#when bc is computed, the distribution absorbed is based on this number
+nvpart_per_part = 80
 
 bc_k=0.25
-omega_mean=100
+omega_mean=1
 turb_e_init=0.938
 T_omega = 1/(omega_mean); #approximation to frequency timescale
 phip = zeros((2, np, nt+1)) #scalar concentration at these points
@@ -50,6 +50,7 @@ yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
 phi_eps = 10^(-8) #small non-zero phi, used to replace 0, as histogram requires phi>0
 
 record_BC_flux && (flux_y0 = zeros(2,x_res,nt))
+record_BC_flux && (flux_y0_vel = zeros(x_res,nt))
 dphi_x_phi = ((phi_domain[2]-phi_domain[1])/psi_partions_num)^2 #approx for the phi-space 2-D lebesgue measure that f_phi is defined wrt
 
 if Initial_condition == "Uniform phi_1"
@@ -289,13 +290,6 @@ for t in 1:nt
     mag = findall(yp[:,t+1].<=0) # index of particle with yp>height_domain
     dim_mag = size(mag) # dimension of array "mag"
 
-    y_mag_succ = yp[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    ypr_mag = - y_mag_succ  # yp at time t+1 of the reflected particle
-
-    yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
-    uyp[mag] = -uyp[mag] #reflecting velocity
-
     record_BC_flux && (missing_mass = phip[:,:,t])
     bc_absorbtion(mag, dim_mag[1], t)
     if record_BC_flux
@@ -305,8 +299,16 @@ for t in 1:nt
             in_x = x_edges[j].<xp[:,t].<x_edges[j+1]
             cell_particles = findall(in_x.&in_y)
             flux_y0[:,j,t] = mean(missing_mass[:,cell_particles],dims=2)[:,1]
+            flux_y0_vel[j,t] = mean(uyp[mag])
         end
     end
+    y_mag_succ = yp[mag,t+1] # yp at time t+1 corresponding to the index "mag"
+
+    ypr_mag = - y_mag_succ  # yp at time t+1 of the reflected particle
+
+    yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
+    uyp[mag] = -uyp[mag] #reflecting velocity
+
 
     #bc at end (y=length_domain) of domain
     end_indicies = xp[:,t+1].>=length_domain #index of particle with xp>length
@@ -447,4 +449,5 @@ end
 
 write(filename, f_phi)
 record_BC_flux && write(filename*"flux", flux_y0)
+record_BC_flux && write(filename*"flux_vel", flux_y0_vel)
 print("Success")

@@ -1,8 +1,8 @@
 using OrdinaryDiffEq, ModelingToolkit, DiffEqOperators, Plots; plotlyjs()
 
 k = 0.938
-C_0 = 3 
-omega_mean=100
+C_0 = 2.1
+omega_mean=5
 B=(1.5*C_0)
 bc_k=0.25
 D=2*C_0*k/((B^2)*omega_mean)
@@ -26,6 +26,6 @@ prob = ODEProblem(step, u0, (t0, t1))
 alg = KenCarp4()
 sol = solve(prob, alg)
 
-U = [sol.u[i][j] for i in 1:length(sol.t), j in 1:nknots]
-surface(knots,sol.t,U,ylabel="t",
-xlabel="y")
+U = [sol.u[i][j] for j in 1:nknots, i in 1:length(sol.t)]
+surface(sol.t,knots,U,ylabel="y",
+xlabel="t",title="MOL solver")
