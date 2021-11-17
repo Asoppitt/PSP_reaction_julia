@@ -90,7 +90,7 @@ elseif Initial_condition == "double delta"
     end
 end
 
-function assign_f_phi_cell!(f_phi_cell::Array{Float64},phi_array::Array{Float64})
+function assign_f_phi_cell!(f_phi_cell::Array{TF},phi_array::Array{TF}) where TF <: AbstractFloat
     "use if cell_points has alreday been determined"
     for psi1_i=1:psi_partions_num
         in_1 = psi_1[psi1_i].<=phi_array[1,:].<psi_1[psi1_i+1]
@@ -102,18 +102,20 @@ function assign_f_phi_cell!(f_phi_cell::Array{Float64},phi_array::Array{Float64}
     f_phi_cell[:, :] = f_phi_cell./(size(phi_array)[2])
 end 
 
-function assign_f_phi!(f_phi_t::Array{Float64},phi_array::Array{Float64})
-    for i in 1:y_res
-        in_y = y_edges[i].<=yp[:,t_index].<y_edges[i+1]
-        for j in 1:x_res
-            in_x = x_edges[j].<=xp[:,t_index].<x_edges[j+1]
-            cell_particles = findall(in_x.&in_y)
-            assign_f_phi_cell!(f_phi_t[:,:,i, j],phi_array[:,cell_particles])
-        end 
-    end
-end 
+#needs a lot of inputs to work, goin to try just copying functionality in the 1 place it is used
+# function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, x_res::Int, y_res::Int, xp::Array{TF}, yp::Array{TF}) where TF <: AbstractFloat
+#     for i in 1:y_res
+#         in_y = y_edges[i].<=yp[:].<y_edges[i+1]
+#         for j in 1:x_res
+#             in_x = x_edges[j].<=xp[:].<x_edges[j+1]
+#             cell_particles = findall(in_x.&in_y)
+#             assign_f_phi_cell!(f_phi_t[:,:,i, j],phi_array[:,cell_particles])
+#         end 
+#     end
+# end 
+
 if CLT_limt
-    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, turb_k_e::Array{TF}) where TF<:AbstractFloat
+    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
         n_abs = size(abs_points)[2]
         abs_k = bc_k.*ones(2,n_abs)
         effective_v_particles =( abs_points.*nvpart_per_part)
@@ -130,7 +132,7 @@ if CLT_limt
     end
 else
     #using binomal noise for small numbers of vparticles
-    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, turb_k_e::Array{TF}) where TF<:AbstractFloat
+    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
         n_abs = size(abs_points)[2]
         abs_k = bc_k.*ones(2,n_abs)
         effective_v_particles =( abs_points.*nvpart_per_part)
@@ -145,7 +147,7 @@ else
         abs_points[:, :] = abs_points.*ratios
     end
 end
-function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::AbstractFloat, turb_k_e::Array{TF}) where TF<:AbstractFloat
+function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::AbstractFloat, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
     nvpart_per_part != Inf && throw(DomainError("nvpart_per_part must be Int or Inf"))
     n_abs = size(abs_points)[2]
     abs_k = bc_k.*ones(2,n_abs)
@@ -178,7 +180,7 @@ function u_mean(y)
     u_max.*ones(np)#-4*u_max.*y.*(y.-height_domain)./height_domain^2
 end
 C_0 = 2.1  # rate parameter for velocity change
-B=(1.5*C_0) #for reducing the langevin to a standard form - part of boundary conditions implementaion from Erban and Chapman 06
+B = (1.5*C_0)
 PSP_off = true
 new_inflow = false
 record_BC_flux = true
@@ -203,7 +205,7 @@ dphi_x_phi = ((phi_domain[2]-phi_domain[1])/psi_partions_num)^2 #approx for the 
 set_phi_as_ic!(phip[:,:,1],yp[:,1])
 
 omegap = zeros(np,nt+1) #turbulence frequency
-omega0_dist = Gamma(omega_mean/omega_shape_init,omega_shape_init)
+omega0_dist = Gamma(1/(1+omega_sigma_2),(1+omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
 omegap[:,1] = rand(omega0_dist, np)
 
 x_edges = LinRange(0,length_domain,x_res+1)
@@ -273,14 +275,14 @@ for t in 1:nt
     yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
     uyp[mag] = -uyp[mag] #reflecting velocity
 
-    # bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, k[mag]) disabled to match paper
+    # bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, bc_k, k[mag], C_0, B) #disabled to match paper
 
     # Reflection at lower boundary y<0
     mag = findall(yp[:,t+1].<=0) # index of particle with yp>height_domain
     dim_mag = size(mag) # dimension of array "mag"
 
     record_BC_flux && (missing_mass = phip[:,:,t])
-    bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, k[mag])
+    bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, bc_k, k[mag], C_0, B)
     if record_BC_flux
         missing_mass -= phip[:,:,t]
         in_y = y_edges[1].<yp[:,t].<y_edges[2] #is in lowest row?
@@ -432,7 +434,14 @@ for t in 1:nt
         phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
     end
 
-    assign_f_phi(f_phi[:,:,:,:,t],phip[:,:,t])
+    for i in 1:y_res
+        in_y = y_edges[i].<=yp[:,t].<y_edges[i+1]
+        for j in 1:x_res
+            in_x = x_edges[j].<=xp[:,t].<x_edges[j+1]
+            cell_particles = findall(in_x.&in_y)
+            assign_f_phi_cell!(f_phi[:,:,i, j,t],phip[:,cell_particles,t])
+        end 
+    end
 
 end
 
