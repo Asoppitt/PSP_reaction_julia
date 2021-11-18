@@ -1,12 +1,3 @@
-using Random, Distributions
-import StatsBase as sb
-import LinearAlgebra as la
-import Statistics as st
-
-Random.seed!(12345) #setting a seed
-Initial_condition = "Uniform phi_1"
-phi_eps = 10^(-8) #small non-zero phi, used to replace 0, as histogram requires phi>0
-CLT_limt = true
 struct CellGrid{T<:AbstractFloat}
     x_res ::Int
     y_res ::Int
@@ -23,12 +14,47 @@ struct PsiGrid{T<:AbstractFloat}
     psi_2 ::AbstractVector{T}
 end
 
+struct PSPParams{T<:AbstractFloat}
+    omega_bar::T
+    omega_sigma_2::T
+    T_omega::T
+    C_0::T
+    B::T
+    c_phi::T
+    c_t::T
+end
+
+struct MotionParams{T<:AbstractFloat}
+    omega_bar::T
+    C_0::T
+    B::T
+    u_mean::T
+end
+
 function cell_grid(x_res ::Int,y_res ::Int,length_domain ::T,height_domain ::T) where T<:AbstractFloat #constructor for CellGrid
     return CellGrid(x_res,y_res,length_domain,height_domain,LinRange(0,length_domain,x_res+1),LinRange(0,height_domain,y_res+1))
 end
 
 function psi_grid(psi_partions_num ::Int, phi_domain ::AbstractVector{T}) where T<:AbstractFloat #constructor for PsiGrid
     return PsiGrid(psi_partions_num, phi_domain,LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1),LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1))
+end
+
+function PSP_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T) where T<:AbstractFloat
+    if B_format == "Decay"
+        return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, C_0, (1+1.5*C_0), c_phi, c_t)
+    elseif B_format == "Constant"
+        return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, C_0, (1.5*C_0), c_phi, c_t)
+end
+
+function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
+if B_format == "Decay"
+    return MotionParams(omega_bar, C_0, (1+1.5*C_0), u_mean)
+elseif B_format == "Constant"
+    return MotionParams(omega_bar, C_0, (1.5*C_0), u_mean)
+end
+
+function PSP_motion_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T) where T<:AbstractFloat
+    return PSP_params(omega_bar, omega_sigma_2, C_0, B_format, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean)
 end
 
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{Float64}, particles::Vector{Int}, cell_points::Vector{Int}) 
@@ -61,52 +87,52 @@ function assign_pm_single!(phi_pm::Matrix{Int}, phi_array_t::Array{Float64}, par
         end
     end
 end
-if Initial_condition == "Uniform phi_1"
-    function set_phi_as_ic!(phi_array::Array{Float64},yp::Array{Float64})
-        nparticles = size(phi_array)[2]
-        phi_array[2,:] = abs.(phi_eps*randn(nparticles)) #pdf can't find zeros
-        phi_array[1,:] .= 1;
-    end
-elseif Initial_condition == "triple delta"
-    function set_phi_as_ic!(phi_array::Array{Float64},yp::Array{Float64})
-        nparticles = size(phi_array)[2]
-        local delta_selector = rand(1:3, nparticles)
-        local noise_term = randn(nparticles)
 
-        phi_array[1,delta_selector.=1] = -sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=1]
-        phi_array[2,delta_selector.=1] .= -0.5
+function set_phi_as_ic_up1!(phi_array::Array{Float64})
+    #Initial_condition == "Uniform phi1"
+    nparticles = size(phi_array)[2]
+    phi_array[2,:] = abs.(phi_eps*randn(nparticles)) #pdf can't find zeros
+    phi_array[1,:] .= 1;
+end
+function set_phi_as_ic_td!(phi_array::Array{Float64})
+    #Initial_condition == "triple_delta"
+    nparticles = size(phi_array)[2]
+    local delta_selector = rand(1:3, nparticles)
+    local noise_term = randn(nparticles)
 
-        phi_array[1,delta_selector.=2] = sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=2]
-        phi_array[2,delta_selector.=2] .= -0.5
+    phi_array[1,delta_selector.=1] = -sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=1]
+    phi_array[2,delta_selector.=1] .= -0.5
 
-        phi_array[1,delta_selector.=3] .= phi_eps
-        phi_array[2,delta_selector.=3] = 1.0 .+phi_eps .*noise_term[delta_selector.=3]
-    end
-elseif Initial_condition == "2 layers"
-    function set_phi_as_ic!(phi_array::Array{Float64},yp::Array{Float64})
-        nparticles = size(phi_array)[2]
-        local noise_term = randn(nparticles)
-        # local uniform_noise = rand(nparticles).-0.5
+    phi_array[1,delta_selector.=2] = sqrt(3)/2 .+phi_eps .*noise_term[delta_selector.=2]
+    phi_array[2,delta_selector.=2] .= -0.5
 
-        phi_array[2,[yp.>0.5*height_domain]] = abs.(phi_eps*noise_term[yp.>0.5*height_domain] )
-        phi_array[1,[yp.>0.5*height_domain]] .= 1
+    phi_array[1,delta_selector.=3] .= phi_eps
+    phi_array[2,delta_selector.=3] = 1.0 .+phi_eps .*noise_term[delta_selector.=3]
+end
+function set_phi_as_ic_2l!(phi_array::Array{TF},yp::Array{TF},space_cells::CellGrid{TF}) where TF<:AbstractFloat
+    #Initial_condition == "2 layers"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
 
-        phi_array[1,[yp.<=0.5*height_domain]] = abs.(phi_eps*noise_term[yp.<=0.5*height_domain] )
-        phi_array[2,[yp.<=0.5*height_domain]] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
-    end
-elseif Initial_condition == "double delta"
-    function set_phi_as_ic!(phi_array::Array{Float64},yp::Array{Float64})
-        nparticles = size(phi_array)[2]
-        local noise_term = randn(nparticles)
-        local delta_selector = rand([true,false], nparticles)
-        # local uniform_noise = rand(nparticles).-0.5
+    phi_array[2,[yp.>0.5*height_domain]] = abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+    phi_array[1,[yp.>0.5*height_domain]] .= 1
 
-        phi_array[2,delta_selector] = abs.(phi_eps*noise_term[delta_selector] )
-        phi_array[1,delta_selector] .= 1 #.+ uniform_noise[delta_selector.==1].*0.05
+    phi_array[1,[yp.<=0.5*height_domain]] = abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+    phi_array[2,[yp.<=0.5*height_domain]] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
+end
+function set_phi_as_ic_dd!(phi_array::Array{Float64})
+    #Initial_condition == "double delta"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(nparticles)
+    local delta_selector = rand([true,false], nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
 
-        phi_array[1,delta_selector] = abs.(phi_eps*noise_term[.!delta_selector] )
-        phi_array[2,delta_selector] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
-    end
+    phi_array[2,delta_selector] = abs.(phi_eps*noise_term[delta_selector] )
+    phi_array[1,delta_selector] .= 1 #.+ uniform_noise[delta_selector.==1].*0.05
+
+    phi_array[1,delta_selector] = abs.(phi_eps*noise_term[.!delta_selector] )
+    phi_array[2,delta_selector] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
 end
 
 function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF},phi_array::AbstractArray{TF}, psi_mesh::PsiGrid{TF}) where TF <: AbstractFloat
@@ -132,40 +158,39 @@ function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Array{TF}, y
     end
 end 
 
-if CLT_limt
-    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
-        n_abs = size(abs_points)[2]
-        abs_k = bc_k.*ones(2,n_abs)
-        effective_v_particles =( abs_points.*nvpart_per_part)
-        #K for Erban and Chapman approximation 
-        P = zeros(2,n_abs)
-        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
-        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
-        #by CLT approx dist for number of virtual particles to have reacted
-        xi = randn(2,n_abs).*sqrt.((P.*(1 .-P)))
-        #catching places where all mass has been removed
-        xi = [effective_v_particles[i,j]>0 ? xi[i,j]./sqrt(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
-        ratios = max.(min.((1 .-P) + xi,1),0)
-        abs_points[:, :] = abs_points.*ratios
-    end
-else
-    #using binomal noise for small numbers of vparticles
-    function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
-        n_abs = size(abs_points)[2]
-        abs_k = bc_k.*ones(2,n_abs)
-        effective_v_particles =( abs_points.*nvpart_per_part)
-        #K for Erban and Chapman approximation 
-        P = zeros(2,n_abs)
-        P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
-        P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
-        #Binomal dist for number of virtual particles to have reacted
-        xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
-        xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
-        ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
-        abs_points[:, :] = abs_points.*ratios
-    end
+function bc_absorbtion_clt!(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
+    n_abs = size(abs_points)[2]
+    abs_k = bc_k.*ones(2,n_abs)
+    effective_v_particles =( abs_points.*nvpart_per_part)
+    #K for Erban and Chapman approximation 
+    P = zeros(2,n_abs)
+    P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
+    P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
+    #by CLT approx dist for number of virtual particles to have reacted
+    xi = randn(2,n_abs).*sqrt.((P.*(1 .-P)))
+    #catching places where all mass has been removed
+    xi = [effective_v_particles[i,j]>0 ? xi[i,j]./sqrt(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
+    ratios = max.(min.((1 .-P) + xi,1),0)
+    abs_points[:, :] = abs_points.*ratios
 end
-function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::AbstractFloat, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
+
+#using binomal noise for small numbers of vparticles
+function bc_absorbtion_bino!(abs_points::Array{TF}, nvpart_per_part::Int, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
+    n_abs = size(abs_points)[2]
+    abs_k = bc_k.*ones(2,n_abs)
+    effective_v_particles =( abs_points.*nvpart_per_part)
+    #K for Erban and Chapman approximation 
+    P = zeros(2,n_abs)
+    P[1,:] = min.(abs_k[1,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
+    P[2,:] = min.(abs_k[2,:].*sqrt.(B.*pi./(C_0.*turb_k_e)),1)
+    #Binomal dist for number of virtual particles to have reacted
+    xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
+    xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
+    ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
+    abs_points[:, :] = abs_points.*ratios
+end
+
+function bc_absorbtion_inf!(abs_points::Array{TF}, nvpart_per_part::TF, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
     nvpart_per_part != Inf && throw(DomainError("nvpart_per_part must be Int or Inf"))
     n_abs = size(abs_points)[2]
     abs_k = bc_k.*ones(2,n_abs)
@@ -177,7 +202,18 @@ function bc_absorbtion(abs_points::Array{TF}, nvpart_per_part::AbstractFloat, bc
     abs_points[:, :] = abs_points.*ratios
 end
 
-function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, B::T, omega_bar::T, C_0::T, u_mean::T, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
+function bc_absorbtion_bino!(abs_points::Array{TF}, nvpart_per_part::TF, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
+    bc_absorbtion_inf!(abs_points, nvpart_per_part, bc_k, turb_k_e, C_0, B) #basically a function pointer
+end
+function bc_absorbtion_clt!(abs_points::Array{TF}, nvpart_per_part::TF, bc_k::TF, turb_k_e::Array{TF}, C_0::TF, B::TF) where TF<:AbstractFloat
+    bc_absorbtion_inf!(abs_points, nvpart_per_part, bc_k, turb_k_e, C_0, B) #basically a function pointer
+end
+
+function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, m_params::MotionParams{T}, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
+    omega_bar=m_params.omega_bar
+    C_0=m_params.C_0
+    B=m_params.B
+    u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
     bc_interact = zeros(Bool, np, nt, 4)
@@ -249,8 +285,12 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     return bc_interact
 end
 
-function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, B::T, omega_bar::T, C_0::T, u_mean::T, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
+function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, m_params::MotionParams{T}, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
     #for constant kinetic energy
+    omega_bar=m_params.omega_bar
+    C_0=m_params.C_0
+    B=m_params.B
+    u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
     bc_interact = zeros(Bool, np, nt, 4)
@@ -314,195 +354,19 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     return bc_interact
 end
 
-for test_index=1:1
-filename="Data/PSP_on_uniform_1_smolsquare_c_0_21_k_09_w_1_new_abs_80_vp_CLT"
-psi_partions_num = 20 #number of partitions in 1 state space direction
-phi_domain = [0,1.2]
+function PSP_model!(f_phi::Array{TF,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, bc_k::TF, dt::T, Initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}) where T<:AbstractFloat
+    omega_mean=p_params.omega_bar
+    omega_sigma_2 = p_params.omega_sigma_2
+    T_omega = p_params.T_omega
+    C_0=p_params.C_0
+    B=p_params.B
+    c_phi = p_params.c_phi
+    c_t = p_params.c_t
+    np, nt = size(x_pos)
 
-psi_mesh = psi_grid(psi_partions_num,phi_domain)
-
-n=5 #a convinent method of increascing resolution while maintaining 
-    # resolution ratios and number of particles per cell
-
-x_res=n #number of cells in x dim
-y_res=n
-np = x_res*y_res*1000 # number of particles
-dt = 0.005  # time step
-nt = 60   # number of time steps
-length_domain = 0.10 #length of periodic element
-height_domain = 0.04
-omega_shape_init = 0.25
-omega_sigma_2 = 0.25
-c_phi = 25
-c_t = 2
-u_max = 0
-function u_mean(y)
-    u_max.*ones(np)#-4*u_max.*y.*(y.-height_domain)./height_domain^2
-end
-C_0 = 2.1  # rate parameter for velocity change
-B = (1.5*C_0)
-PSP_off = true
-new_inflow = false
-record_BC_flux = true
-#assuming each psp particle consists of a number of virtual particles with binary scalar values 
-#when bc is computed, the distribution absorbed is based on this number
-nvpart_per_part = 80
-space_cells = cell_grid(x_res, y_res, length_domain, height_domain)
-
-bc_k=0.25
-omega_mean=1
-turb_e_init=0.938
-T_omega = 1/(omega_mean); #approximation to frequency timescale
-phip = zeros((2, np, nt+1)) #scalar concentration at these points
-#ititialising position
-xp = length_domain*rand(Float64, (np,nt+1)) # position of particle in x-direction
-yp = height_domain*rand(Float64, (np,nt+1)) # position of paticle in y-direction
-
-
-record_BC_flux && (flux_y0 = zeros(2,x_res,nt))
-record_BC_flux && (flux_y0_vel = zeros(x_res,nt))
-dphi_x_phi = ((phi_domain[2]-phi_domain[1])/psi_partions_num)^2 #approx for the phi-space 2-D lebesgue measure that f_phi is defined wrt
-
-set_phi_as_ic!(phip[:,:,1],yp[:,1])
-
-omegap = zeros(np,nt+1) #turbulence frequency
-omega0_dist = Gamma(1/(1+omega_sigma_2),(1+omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
-omegap[:,1] = rand(omega0_dist, np)
-
-x_edges = LinRange(0,length_domain,x_res+1)
-y_edges = LinRange(0,height_domain,y_res+1)
-
-#array for storing indicies of paired particles for psp
-phi_pm = zeros(Int, 2, np)
-
-f_phi = zeros(psi_partions_num, psi_partions_num, y_res, x_res, nt+1) # histogram of each cell at a given time 
-
-#initialising phi_pm and f_phi
-for i in 1:y_res
-    in_y = y_edges[i].<yp[:,1].<y_edges[i+1]
-    for j in 1:x_res
-        in_x = x_edges[j].<xp[:,1].<x_edges[j+1]
-        cell_particles = findall(in_x.&in_y)
-        assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
-        assign_f_phi_cell!(f_phi[:,:,i,j,1],phip[:,cell_particles,1],psi_mesh)
-    end 
-end
-
-#time stamp until new p/m bound found, needed to ensure particles are
-#decorreltaed
-t_decorr_p = 1 ./(c_t.*omegap[phi_pm[1,:],1])
-t_decorr_m = 1 ./(c_t.*omegap[phi_pm[2,:],1])
-
-k= ones(np).*turb_e_init
-uxp = randn(np).*sqrt.(2/3 .*k)
-uyp = randn(np).*sqrt.(2/3 .*k)
-
-for t in 1:nt
-    println(t)
-    #Using the SLM model for particle location
-    for i in 1:y_res
-        in_y = y_edges[i].<yp[:,t].<y_edges[i+1]
-        for j in 1:x_res
-            in_x = x_edges[j].<xp[:,t].<x_edges[j+1]
-            cell_particles = findall(in_x.&in_y)
-            k[cell_particles].=turb_e_init#0.5*(st.mean(uxp[cell_particles].^2)+st.mean(uyp[cell_particles].^2))*1.5 #turb_e_init;
-        end
-    end
-    uxp = uxp+(-0.5*B*omega_mean*uxp)*dt+randn(np).*sqrt.(C_0.*k.*omega_mean.*dt); 
-    uyp = uyp+(-0.5*B*omega_mean*uyp)*dt+randn(np).*sqrt.(C_0.*k.*omega_mean.*dt); 
-    uxp_full = u_mean(yp[:,t])+uxp
-    xp[:,t+1] = xp[:,t] + (uxp_full)*dt # random walk in x-direction
-    yp[:,t+1] = yp[:,t] + uyp*dt # random walk in y-direction
-
-
-    # Reflection particles at boundaries
-
-    # Reflection at upper boundary y>height_domain
-    # doing closed on top open on bottom, as cell detection is open on top,
-    # closed on bottom
-    mag = findall(yp[:,t+1].>=height_domain) # index of particle with yp>height_domain
-    dim_mag = size(mag) # dimension of array "mag"
-
-    y_mag_succ = yp[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    V1 = height_domain.*ones(dim_mag) 
-
-    ypr_mag = V1*2 .- y_mag_succ  # yp at time t+1 of the reflected particle
-
-    yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
-    uyp[mag] = -uyp[mag] #reflecting velocity
-
-    # bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, bc_k, k[mag], C_0, B) #disabled to match paper
-
-    # Reflection at lower boundary y<0
-    mag = findall(yp[:,t+1].<=0) # index of particle with yp>height_domain
-    dim_mag = size(mag) # dimension of array "mag"
-
-    record_BC_flux && (missing_mass = phip[:,:,t])
-    bc_absorbtion(phip[:,mag,t+1], nvpart_per_part, bc_k, k[mag], C_0, B)
-    if record_BC_flux
-        missing_mass -= phip[:,:,t]
-        in_y = y_edges[1].<yp[:,t].<y_edges[2] #is in lowest row?
-        for j in 1:x_res
-            in_x = x_edges[j].<xp[:,t].<x_edges[j+1]
-            cell_particles = findall(in_x.&in_y)
-            flux_y0[:,j,t] = mean(missing_mass[:,cell_particles],dims=2)[:,1]
-            flux_y0_vel[j,t] = mean(uyp[mag])
-        end
-    end
-    y_mag_succ = yp[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    ypr_mag = - y_mag_succ  # yp at time t+1 of the reflected particle
-
-    yp[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
-    uyp[mag] = -uyp[mag] #reflecting velocity
-
-
-    #bc at end (y=length_domain) of domain
-    end_indicies = xp[:,t+1].>=length_domain #index of particle with xp>length
-    dim_end = sum(end_indicies)
-
-    end_x = xp[end_indicies,t+1]
-    xpr_end = end_x .- length_domain #shifting particles back to begining
-    xp[end_indicies,t+1] = xpr_end #replacing x coords
-
-    if new_inflow
-        #resetting concentration of "new" particles
-        set_phi_as_ic!(phip[:,end_indicies,1],yp[end_indicies,1])
-
-        #resetting energy of "new" particles
-        uxp[end_indicies] = randn(dim_end,1)*sqrt(2/3*turb_e_init)
-        uyp[end_indicies] = randn(dim_end,1)*sqrt(2/3*turb_e_init)
-        k[end_indicies] .= turb_e_init
-    end
-
-    #bc at start (y=0) of domain
-    start_indicies = xp[:,t+1].<=0 #index of particle with xp>length
-    dim_start = sum(start_indicies)
-
-    if new_inflow
-        xpr_start = -xp[start_indicies,t+1] #reflection
-        xp[start_indicies,t+1] = xpr_start #replacing x coords
-        uxp[start_indicies] = - uxp[start_indicies]
-
-        #resetting concentration of "new" particles
-        set_phi_as_ic!(phip[:,start_indicies,1],yp[start_indicies,1])
-
-        #resetting energy of "new" particles
-        uxp[start_indicies] = randn(dim_start,1)*sqrt(2/3*turb_e_init)
-        uyp[start_indicies] = randn(dim_start,1)*sqrt(2/3*turb_e_init)
-        k[start_indicies] .= turb_e_init
-    else
-        #true periodic bc
-        xpr_start = length_domain .+ xp[start_indicies,t+1] 
-        xp[start_indicies,t+1] = xpr_start #replacing x coords
-    end
-
-
-    #PSP begins here
-    if PSP_off
-        dphi = zeros(2,np)
-    else
+    phip = zeros((2, np, nt+1)) #scalar concentration at these points
+    phi_pm = zeros(Int, 2, np) #pm pairs for each particle
+    for t in 1:nt    
         #E-M solver for omega 
         dw = sqrt(dt).*randn(np) #random draws
         omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
@@ -516,10 +380,10 @@ for t in 1:nt
         phi_pm[2,(t_decorr_m.<=0)] .= 0
 
         #split into cells, compute centres/targets, run ODE step
-        for i in 1:y_res
-            in_y = y_edges[i].<=yp[:,t+1].<y_edges[i+1]
-            for j in 1:x_res
-                in_x = x_edges[j].<=xp[:,t+1].<x_edges[j+1]
+        for i in 1:space_cells.y_res
+            in_y = space_cells.y_edges[i].<=y_pos[:,t+1].<space_cells.y_edges[i+1]
+            for j in 1:space_cells.x_res
+                in_x = space_cells.x_edges[j].<=x_pos[:,t+1].<space_cells.x_edges[j+1]
                 cell_particles = findall(in_x.&in_y)
                 if 0 in cell_particles
                     print("0 in cell_particles ", i,j,' ',t,'\n')
@@ -553,20 +417,20 @@ for t in 1:nt
         e_1 = [cos(angle),sin(angle)]
         handedness = sb.sample([-1,1],1)[1] #randomly choose betwen left or right handed system
         e_2 = handedness*[e_1[2],-e_1[1]]
-        T=zeros(2,2)
-        T[:,1] = e_1  #coord transform matrix
-        T[:,2] = e_2
-        dphi = T\dphi  #transform to new coords
+        T_mat=zeros(2,2)
+        T_mat[:,1] = e_1  #coord transform matrix
+        T_mat[:,2] = e_2
+        dphi = T_mat\dphi  #transform to new coords
         #performing adjustment to mean 0
         corr_factor = zeros(2,np)
-        for i in 1:y_res
-            in_y = y_edges[i].<=yp[:,t+1].<y_edges[i+1]
-            for j in 1:x_res
-                in_x = x_edges[j].<=xp[:,t+1].<x_edges[j+1]
+        for i in 1:space_cells.y_res
+            in_y = space_cells.y_edges[i].<=y_pos[:,t+1].<space_cells.y_edges[i+1]
+            for j in 1:space_cells.x_res
+                in_x = space_cells.x_edges[j].<=x_pos[:,t+1].<space_cells.x_edges[j+1]
                 cell_particles = findall(in_x.&in_y)
                 for phi_i=1:2
                     phi_mean = mean(dphi[phi_i,cell_particles])
-                    if phi_mean != 0
+                    if phi_mean != 0 #isn't true for empty cells
                         cell_points_pos = dphi[phi_i,cell_particles].>0
                         cell_points_neg = dphi[phi_i,cell_particles].<0
                         phi_pos_mean = mean(cell_points_pos.*dphi[phi_i,cell_particles])
@@ -583,20 +447,12 @@ for t in 1:nt
             end
         end
         dphi = corr_factor.*dphi
-        dphi = T*dphi #return to old coords
+        dphi = T_mat*dphi #return to old coords
+        phip[:,:,t+1] = phip[:,:,t]+dphi
+        if !(Initial_condition == "triple delta")
+            phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
+        end
+
+        assign_f_phi!(f_phi[:,:,:,:,t],phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells)
     end
-
-    phip[:,:,t+1] = phip[:,:,t]+dphi
-    if !(Initial_condition == "triple delta")
-        phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
-    end
-
-    assign_f_phi!(f_phi[:,:,:,:,t],phip[:,:,t], xp[:,t], yp[:,t], psi_mesh, space_cells)
-
-end
-
-write(filename, f_phi)
-record_BC_flux && write(filename*"flux", flux_y0)
-record_BC_flux && write(filename*"flux_vel", flux_y0_vel)
-print("Success")
 end
