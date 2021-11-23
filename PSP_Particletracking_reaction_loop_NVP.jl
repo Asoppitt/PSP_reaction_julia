@@ -1,20 +1,20 @@
 import Random
-include("PSP_Particltracking_module.jl")
+include("PSP_Particletracking_module.jl")
 pptr = PSPParticleTrackingReactions
 
 Random.seed!(12345) #setting a seed
 
-base_filename="Data/PSP_off_uniform_1_wide_c_0_21_k_09_w_1_new_abs_psi100"
+base_filename="Data/PSP_on_uniform_1_square_c_0_21_k_09_w_1_new_abs"
 
 n=10
-x_res=2 #number of cells in x dim
+x_res=n #number of cells in x dim
 y_res=n
-np = x_res*y_res*10000 # number of particles
+np = x_res*y_res*1000 # number of particles
 dt = 0.005  # time step
 nt = 60   # number of time steps
 length_domain = 0.10 #length of periodic element
 height_domain = 0.04
-psi_partions_num = 100
+psi_partions_num = 20
 psi_domain = [0.0,1.2]
 omega_bar = 1.0
 omega_sigma_2 = 0.25
@@ -25,7 +25,7 @@ c_t = 2.0
 u_mean = 0.0
 turb_k_e=0.938
 bc_k = 0.25
-PSP_on = false
+PSP_on = true
 
 space_cells = pptr.cell_grid(x_res,y_res,length_domain,height_domain)
 psi_mesh = pptr.psi_grid(psi_partions_num, psi_domain)
@@ -38,9 +38,9 @@ xp[:,1] = length_domain.*rand(np)
 yp[:,1] = height_domain.*rand(np)
 bc_interact = pptr.particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
 
-for NVP = 1:1:20
+for NVP = [1:20;30;40;44:56;10 .*2 .^(3:10)]
     filename = base_filename*"_"*string(NVP)*"_vp"
-    for bc_CLT = [false ,true ]
+    for bc_CLT = [true ]
         bc_CLT && (filename *= "_CLT")
         # isfile(filename) && (println(filename, ' ', "skipped");continue)
 

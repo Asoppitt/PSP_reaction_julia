@@ -169,7 +169,26 @@ function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:Abstra
     return nothing
 end
 
-function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF},phi_array::AbstractArray{TF}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
+function assign_f_phi_cell_sparce!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractArray{TF,2}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
+    "use if mass is mostly held in low values of phi_2"
+    np = size(phi_array)[2]
+    inv_np = 1.0 ./ np
+    index_set = trues(np)
+    in_both = falses(np)
+    in_2 = falses(np)
+    for psi2_i=1:psi_mesh.psi_partions_num
+        in_2[index_set] = psi_mesh.psi_1[psi2_i].<=phi_array[2,index_set].<psi_mesh.psi_1[psi2_i+1]
+        for psi1_i=1:psi_mesh.psi_partions_num
+            in_both[index_set] = in_2[index_set].&(psi_mesh.psi_2[psi1_i].<=phi_array[1,index_set].<psi_mesh.psi_2[psi1_i+1])
+            f_phi_cell[psi1_i, psi2_i,cell_row, cell_column, t_index] = sum(in_both[index_set])
+            index_set[index_set] = index_set[index_set] .& .!(in_both[index_set])
+        end
+    end
+    f_phi_cell[:, :,cell_row, cell_column, t_index] = f_phi_cell[:,:,cell_row, cell_column, t_index].*inv_np
+    return nothing
+end 
+
+function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractArray{TF,2}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
     "use if cell_points has alreday been determined"
     for psi1_i=1:psi_mesh.psi_partions_num
         in_1 = psi_mesh.psi_1[psi1_i].<=phi_array[1,:].<psi_mesh.psi_1[psi1_i+1]
@@ -187,8 +206,18 @@ function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Array{TF}, y
         in_y = space_cells.y_edges[i].<=yp[:].<space_cells.y_edges[i+1]
         for j in 1:space_cells.x_res
             in_x = space_cells.x_edges[j].<=xp[:].<space_cells.x_edges[j+1]
-            cell_particles = findall(in_x.&in_y)
-            assign_f_phi_cell!(f_phi_t,phi_array[:,cell_particles],psi_mesh,i,j,t_index)
+            assign_f_phi_cell!(f_phi_t,phi_array[:,in_x.&in_y],psi_mesh,i,j,t_index)
+        end 
+    end
+    return nothing
+end 
+
+function assign_f_phi_sparce!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Array{TF}, yp::Array{TF}, psi_mesh::PsiGrid{TF}, space_cells::CellGrid{TF}, t_index::Int) where TF <: AbstractFloat
+    for i in 1:space_cells.y_res
+        in_y = space_cells.y_edges[i].<=yp[:].<space_cells.y_edges[i+1]
+        for j in 1:space_cells.x_res
+            in_x = space_cells.x_edges[j].<=xp[:].<space_cells.x_edges[j+1]
+            assign_f_phi_cell_sparce!(f_phi_t,phi_array[:,in_x.&in_y],psi_mesh,i,j,t_index)
         end 
     end
     return nothing
@@ -218,6 +247,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
     P = zeros(2,n_abs)
+    P .= Precomp_P
     #by CLT approx dist for number of virtual particles to have reacted
     xi = randn(2,n_abs).*sqrt.((P.*(1 .-P)))
     #catching places where all mass has been removed
@@ -435,12 +465,14 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     c_t = p_params.c_t
     np, nt = size(x_pos)
     nt-=1
+    sparce = false
 
     phip = zeros((2, np, nt+1)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
 
     if initial_condition == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
+        sparce = true
     elseif initial_condition == "triple delta"
         set_phi_as_ic_td!(phip,1)
     elseif initial_condition == "2 layers"
@@ -560,7 +592,11 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
         end
 
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        if sparce
+            assign_f_phi_sparce!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        else
+            assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        end
         # print(maximum(phip[:,:,t]),' ')
     end
     verbose && println("end")
@@ -577,12 +613,14 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
+    sparce = false
 
     phip = zeros((2, np, nt+1)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
 
     if initial_condition == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
+        sparce = true
     elseif initial_condition == "triple delta"
         set_phi_as_ic_td!(phip,1)
     elseif initial_condition == "2 layers"
@@ -702,7 +740,11 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
         end
 
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        if sparce
+            assign_f_phi_sparce!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        else
+            assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        end
         # print(maximum(phip[:,:,t]),' ')
     end
     verbose && println("end")
@@ -712,11 +754,13 @@ end
 function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
+    sparce = false
     
     phip = zeros((2, np, nt+1)) #scalar concentration at these points
 
     if initial_condition == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
+        sparce = true
     elseif initial_condition == "triple delta"
         set_phi_as_ic_td!(phip,1)
     elseif initial_condition == "2 layers"
@@ -731,7 +775,11 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
         verbose && print(t,' ')
         bc_absorbtion!(phip,bc_interact[:,t,2],turb_k_e[bc_interact[:,t,2],t],bc_params,t) #currently only reacting on bottom bc
         phip[:,:,t+1] = phip[:,:,t]
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        if sparce
+            assign_f_phi_sparce!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        else
+            assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        end
     end
     verbose && println("end")
     return nothing
@@ -741,11 +789,13 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
-    
+    sparce = false
+
     phip = zeros((2, np, nt+1)) #scalar concentration at these points
 
     if initial_condition == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
+        sparce = true
     elseif initial_condition == "triple delta"
         set_phi_as_ic_td!(phip,1)
     elseif initial_condition == "2 layers"
@@ -758,9 +808,13 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
     
     for t in 1:nt
         verbose && print(t,' ')
-        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,t,precomp_P) #currently only reacting on bottom bc
+        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t, precomp_P) #currently only reacting on bottom bc
         phip[:,:,t+1] = phip[:,:,t]
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        if sparce
+            assign_f_phi_sparce!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        else
+            assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        end
     end
     verbose && println("end")
     return nothing

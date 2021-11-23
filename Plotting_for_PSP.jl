@@ -2,7 +2,7 @@ using Plots; plotlyjs()#GR.init()
 
 n=10
 nt = 60
-psi_partions_num = 100
+psi_partions_num = 20
 phi_domain = [0,1.2]
 Del_phi = (phi_domain[2]-phi_domain[1])/psi_partions_num
 Del_phi_x_phi = (Del_phi)^2 
@@ -21,7 +21,7 @@ B=(1.5*C_0)
 bc_k=0.25
 D=2*C_0*k/((B^2)*omega_mean)
 do_flux = false
-filename = "Data/PSP_off_uniform_1_wide_c_0_21_k_09_w_1_new_abs_psi100_4_vp_CLT"
+filename = "Data/PSP_on_uniform_1_square_c_0_21_k_09_w_1_new_abs_10240_vp_CLT"
 read!(filename,in_data)
 do_flux && read!(filename*"flux",in_data_flux)
 do_flux && read!(filename*"flux_vel",in_data_flux_vel)
@@ -49,21 +49,21 @@ hopefully_constant  = (flux_y0_1_int)./(x_integral_means[1,:])
 # surface(t_space,y_space,x_integral_means,ylabel="y",
 # xlabel="t",title="Particle method")
 # plot(y_space,x_integral_means[:,nt])
-surface(x_space,y_space,phi_2_means[:,:,1], ylabel="y")
+# surface(x_space,y_space,phi_2_means[:,:,1], ylabel="y")
 # heatmap(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=50,
 # color= colormap("RdBu", logscale=true),
 # title="Contour Plot of ϕ denisty over time for N → ∞",
 # ylabel="ϕ",
 # xlabel="time",
 # colorbartitle="Relative frequency",)
-# contour(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=100, 
-# color= colormap("RdBu", logscale=true),
-# title="Contour Plot of ϕ denisty over time for N → ∞",
-# ylabel="ϕ",
-# xlabel="time",
-# colorbartitle="Relative frequency",
-# fill=true,
-# line=true)
+contour(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=100, 
+color= colormap("RdBu", logscale=true),
+title="Contour Plot of ϕ denisty over time for N → ∞",
+ylabel="ϕ",
+xlabel="time",
+colorbartitle="Relative frequency",
+fill=true,
+line=true)
 # plot(psi_spacing,x_integral_f_phi_1[:,1,20], ylabel="Relative frequency", xlabel="ϕ",
 # title="pdf of ϕ at time 0.3 for N = 1 with PSP mixing",label="2")
 # savefig("CLT_reaction_N1_PSP.png")
