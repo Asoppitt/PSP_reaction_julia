@@ -2,12 +2,12 @@ using Plots; plotlyjs()#GR.init()
 
 n=10
 nt = 60
-psi_partions_num = 20
+psi_partions_num = 100
 phi_domain = [0,1.2]
 Del_phi = (phi_domain[2]-phi_domain[1])/psi_partions_num
 Del_phi_x_phi = (Del_phi)^2 
-x_res=n #number of cells in x dim
-y_res=10*n
+x_res=2 #number of cells in x dim
+y_res=n
 in_data=zeros(psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
 in_data_flux=zeros(2,x_res, nt)
 in_data_flux_vel=zeros(x_res, nt)
@@ -20,8 +20,8 @@ omega_mean=10
 B=(1.5*C_0)
 bc_k=0.25
 D=2*C_0*k/((B^2)*omega_mean)
-do_flux = true
-filename = "Data/PSP_off_uniform_1_tallinreslonginspace_c_0_21_k_08_w_1_new_abs_80_vp_CLT"
+do_flux = false
+filename = "Data/PSP_off_uniform_1_wide_c_0_21_k_09_w_1_new_abs_psi100_4_vp_CLT"
 read!(filename,in_data)
 do_flux && read!(filename*"flux",in_data_flux)
 do_flux && read!(filename*"flux_vel",in_data_flux_vel)
@@ -45,11 +45,11 @@ hopefully_constant  = (flux_y0_1_int)./(x_integral_means[1,:])
 
 
 # do_flux && plot!(t_space,flux_y0_1_int)
-do_flux && plot(t_space,flux_y0_vel)
+# do_flux && plot(t_space,flux_y0_vel)
 # surface(t_space,y_space,x_integral_means,ylabel="y",
 # xlabel="t",title="Particle method")
 # plot(y_space,x_integral_means[:,nt])
-# surface(x_space,y_space,phi_2_means[:,:,nt], ylabel="y")
+surface(x_space,y_space,phi_2_means[:,:,1], ylabel="y")
 # heatmap(t_space,psi_spacing,x_integral_f_phi_1[:,1,1:nt], levels=50,
 # color= colormap("RdBu", logscale=true),
 # title="Contour Plot of ϕ denisty over time for N → ∞",
