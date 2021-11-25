@@ -1,4 +1,5 @@
 using Plots; plotlyjs()
+import StatsBase as sb
 base_filename = "Data/PSP_on_uniform_1_square_c_0_21_k_09_w_1_new_abs"
 
 n = 10
@@ -18,7 +19,7 @@ append!(binomial_NVP, Array(2 .^(3:10).*10))
 CLT_NVP = Array(1:20)
 append!(CLT_NVP,Array(22:2:78))
 append!(CLT_NVP, Array(2 .^(3:10).*10))
-# binomial_NVP = [1:20;22:2:40]
+# binomial_NVP = [1:20;30;40;44:56;10 .*2 .^(3:10)]
 # CLT_NVP = binomial_NVP
 # binomial_NVP = 1:4
 # CLT_NVP = binomial_NVP
@@ -47,31 +48,52 @@ for i in [1]
     read!(filename,in_data)
     global final_time_xedge_inf = sum(in_data,dims=[2,4])[:,1,1,1,nt].* 1/x_res./Del_phi
 end
-conv_error_clt_to_mean=zeros(size(CLT_NVP)[1])
+conv_error_clt_to_mean_lp=zeros(size(CLT_NVP)[1])
+conv_error_clt_to_mean_kl=zeros(size(CLT_NVP)[1])
 for i in 1:size(CLT_NVP)[1]
-    conv_error_clt_to_mean[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_inf).^2)*Del_phi
+    conv_error_clt_to_mean_lp[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_inf).^2)*Del_phi
+    conv_error_clt_to_mean_kl[i] = sb.kldivergence(final_time_xedge_CLT[:,i],final_time_xedge_inf)
 end 
-conv_error_bino_to_mean=zeros(size(binomial_NVP)[1])
+conv_error_bino_to_mean_lp=zeros(size(binomial_NVP)[1])
+conv_error_bino_to_mean_kl=zeros(size(binomial_NVP)[1])
 for i in 1:size(binomial_NVP)[1]
-    conv_error_bino_to_mean[i] = sum(abs.(final_time_xedge_bino[:,i]-final_time_xedge_inf).^2)*Del_phi
+    conv_error_bino_to_mean_lp[i] = sum(abs.(final_time_xedge_bino[:,i]-final_time_xedge_inf).^2)*Del_phi
+    conv_error_bino_to_mean_kl[i] = sb.kldivergence(final_time_xedge_bino[:,i],final_time_xedge_inf)
 end 
 n_clt_and_bino = argmax(CLT_NVP[in.(CLT_NVP,[binomial_NVP])])
-conv_error_bino_to_clt=zeros(n_clt_and_bino)
+conv_error_bino_to_clt_lp=zeros(n_clt_and_bino)
+conv_error_bino_to_clt_kl=zeros(n_clt_and_bino)
 for i in 1:n_clt_and_bino
-    conv_error_bino_to_clt[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_bino[:,binomial_NVP.==CLT_NVP[i]]).^2)*Del_phi
+    conv_error_bino_to_clt_lp[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_bino[:,binomial_NVP.==CLT_NVP[i]]).^2)*Del_phi
+    conv_error_bino_to_clt_kl[i] = sb.kldivergence(final_time_xedge_bino[:,i],final_time_xedge_CLT[:,i])
 end 
 
-plt1 = scatter(log.(CLT_NVP),conv_error_clt_to_mean)
-scatter!(log.(binomial_NVP[1:end]),conv_error_bino_to_mean[1:end])
+plt1 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_lp))
+scatter!(log.(binomial_NVP[1:end]),log.(conv_error_bino_to_mean_lp[1:end]))
+ticks_locs = 10 .^(floor(log10(min(minimum(conv_error_bino_to_mean_lp),
+            minimum(conv_error_clt_to_mean_lp)))):log10(
+            max(maximum(conv_error_bino_to_mean_lp),
+            maximum(conv_error_clt_to_mean_lp))))
+yticks!(log.(ticks_locs),string.(ticks_locs))
 ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP)))
 xticks!(log.(ticks_locs),string.(ticks_locs))
 xlabel!(plt1,"Number of Virtual Particles")
 ylabel!(plt1,"Error in L2 norm")
 title!(plt1,"Error of Binomial and Normal compared to Mean model")
 display(plt1)
-plt2 = plot(scatter(log.(CLT_NVP[1:n_clt_and_bino]),conv_error_bino_to_clt))
+plt11 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_kl))
+scatter!(log.(binomial_NVP[1:end]),log.(conv_error_bino_to_mean_kl[1:end]))
+ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP)))
+xticks!(log.(ticks_locs),string.(ticks_locs))
+xlabel!(plt11,"Number of Virtual Particles")
+ylabel!(plt11,"Error in KL Divergence")
+title!(plt11,"Error of Binomial and Normal compared to Mean model")
+display(plt11)
+plt2 = plot(scatter(log.(CLT_NVP[1:n_clt_and_bino]),log.(conv_error_bino_to_clt_lp)))
 N_range = Array(CLT_NVP[1]:CLT_NVP[n_clt_and_bino])
-plot!(log.(N_range),1 ./sqrt.(2 .*pi.*log.(N_range)))
+plot!(log.(N_range),log.(1 ./sqrt.(2 .*pi.*log.(N_range))))
+ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP[1:n_clt_and_bino])))
+xticks!(log.(ticks_locs),string.(ticks_locs))
 xlabel!(plt2,"Number of Virtual Particles")
 ylabel!(plt2,"Error in L2 norm")
 title!(plt2,"Error of Binomial compared to Normal")
