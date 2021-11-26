@@ -4,7 +4,7 @@ pptr = PSPParticleTrackingReactions
 
 Random.seed!(12345) #setting a seed
 
-base_filename="Data/PSP_on_uniform_1_square_c_0_21_k_09_w_1_new_abs"
+base_filename="Data/test_new_histogram"
 
 n=10
 x_res=n #number of cells in x dim
@@ -38,18 +38,18 @@ xp[:,1] = length_domain.*rand(np)
 yp[:,1] = height_domain.*rand(np)
 bc_interact = pptr.particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
 
-for NVP = [1:20;30;40;44:56;10 .*2 .^(3:10)]
+for NVP = [10]
     filename = base_filename*"_"*string(NVP)*"_vp"
-    for bc_CLT = [true ]
+    for bc_CLT = [false ]
         bc_CLT && (filename *= "_CLT")
         # isfile(filename) && (println(filename, ' ', "skipped");continue)
 
         bc_params = pptr.BC_params(bc_k, C_0, B_format, NVP, bc_CLT)
         f_phi = zeros(psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
         if PSP_on
-            pptr.PSP_model!(f_phi,xp,yp, turb_k_e, bc_interact, dt, "Uniform phi_1", mix_params, psi_mesh, space_cells, bc_params, true)
+            @time pptr.PSP_model!(f_phi,xp,yp, turb_k_e, bc_interact, dt, "Uniform phi_1", mix_params, psi_mesh, space_cells, bc_params, true)
         else
-            pptr.make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, "Uniform phi_1", psi_mesh, space_cells, bc_params, true)
+            @time pptr.make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, "Uniform phi_1", psi_mesh, space_cells, bc_params, true)
         end
         write(filename, f_phi)
         println(filename, ' ', "success")

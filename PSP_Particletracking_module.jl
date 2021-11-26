@@ -177,34 +177,81 @@ function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractA
     current_i = 0
     for i in phi_array_sort_ind_1
         current_i += 1
-        if phi_array[1,i] > psi_mesh.psi_1[phi1_i]
-            phi_array_sort_ind_2 = sortperm(phi_array[1,phi_array_sort_ind_1[prev_stop_1:current_i]])
+        while phi_array[1,i] > psi_mesh.psi_1[phi1_i]
+            phi_array_sort_ind_2 = phi_array_sort_ind_1[sortperm(phi_array[2,phi_array_sort_ind_1[prev_stop_1:current_i-1]]).+prev_stop_1]
             accum = 0
             phi2_i = 2
             for j in phi_array_sort_ind_2
-                accum +=1
-                if phi_array[2,j] > psi_mesh.psi_2[phi2_i]
+                while phi_array[2,j] > psi_mesh.psi_2[phi2_i]
                     f_phi_cell[phi1_i, phi2_i, cell_row, cell_column, t_index] = float(accum)
                     accum = 0
                     phi2_i += 1
                 end
+                accum +=1
             end
+            f_phi_cell[phi1_i, phi2_i, cell_row, cell_column, t_index] = float(accum)
             prev_stop_1 = current_i
             phi1_i +=1
         end
     end
+    #catch those for which there is no higher points
+    phi_array_sort_ind_2 = phi_array_sort_ind_1[sortperm(phi_array[2,phi_array_sort_ind_1[prev_stop_1:current_i-1]]).+prev_stop_1]
+    accum = 0
+    phi2_i = 2
+    for j in phi_array_sort_ind_2
+        while phi_array[2,j] > psi_mesh.psi_2[phi2_i]
+            f_phi_cell[phi1_i, phi2_i, cell_row, cell_column, t_index] = float(accum)
+            accum = 0
+            phi2_i += 1
+        end
+        accum +=1
+    end
+    f_phi_cell[phi1_i, phi2_i, cell_row, cell_column, t_index] = float(accum)
+
     f_phi_cell[:, :,cell_row, cell_column, t_index] = f_phi_cell[:,:,cell_row, cell_column, t_index]./(size(phi_array)[2])
+    any(f_phi_cell[:, :, cell_row, cell_column, t_index] .!= f_phi_cell[:, :, cell_row, cell_column, t_index]) && (print("error",' ',size(phi_array),' '), qwertuio)
     return nothing
 end 
 
-function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Array{TF}, yp::Array{TF}, psi_mesh::PsiGrid{TF}, space_cells::CellGrid{TF}, t_index::Int) where TF <: AbstractFloat
-    for i in 1:space_cells.y_res
-        in_y = space_cells.y_edges[i].<=yp[:].<space_cells.y_edges[i+1]
-        for j in 1:space_cells.x_res
-            in_x = space_cells.x_edges[j].<=xp[:].<space_cells.x_edges[j+1]
-            assign_f_phi_cell!(f_phi_t,phi_array[:,in_x.&in_y],psi_mesh,i,j,t_index)
-        end 
+function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Vector{TF}, yp::Vector{TF}, psi_mesh::PsiGrid{TF}, space_cells::CellGrid{TF}, t_index::Int) where TF <: AbstractFloat
+    x_sort = sortperm(xp)
+    x_i = 2 #assuming no values outside range
+    prev_stop_x = 1
+    current_i = 0
+    for i in x_sort
+        current_i += 1
+        while xp[i] > space_cells.x_edges[x_i]
+            y_sort = x_sort[sortperm(yp[x_sort[prev_stop_x:current_i-1]]).+(prev_stop_x-1)]
+            prev_stop_y = 1
+            y_i = 2
+            current_j = 0
+            for j in y_sort
+                current_j += 1
+                while yp[j] > space_cells.y_edges[y_i]
+                    assign_f_phi_cell!(f_phi_t, phi_array[:,y_sort[prev_stop_y:current_j-1]], psi_mesh, x_i-1, y_i-1, t_index)
+                    prev_stop_y = current_j
+                    y_i+=1
+                end
+            end
+            assign_f_phi_cell!(f_phi_t, phi_array[:,y_sort[prev_stop_y:current_j-1]], psi_mesh, x_i-1, y_i-1, t_index)
+            prev_stop_x = current_i
+            x_i +=1
+        end
     end
+    #catch final cell
+    y_sort = x_sort[sortperm(yp[x_sort[prev_stop_x:current_i-1]]).+(prev_stop_x-1)]
+    prev_stop_y = 1
+    y_i = 2
+    current_j = 0
+    for j in y_sort
+        current_j += 1
+        while yp[j] > space_cells.y_edges[y_i]
+            assign_f_phi_cell!(f_phi_t, phi_array[:,y_sort[prev_stop_y:current_j-1]], psi_mesh, x_i-1, y_i-1, t_index)
+            prev_stop_y = current_j
+            y_i+=1
+        end
+    end
+    assign_f_phi_cell!(f_phi_t, phi_array[:,y_sort[prev_stop_y:current_j-1]], psi_mesh, x_i-1, y_i-1, t_index)
     return nothing
 end 
 
@@ -289,11 +336,8 @@ end
 
 #mean Precomp
 function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
-    n_abs = sum(abs_points)
     #K for Erban and Chapman approximation 
-    P = zeros(2,n_abs)
-    P .= Precomp_P
-    ratios = 1 .-P #taking mean for limiting case
+    ratios = 1 - Precomp_P #taking mean for limiting case
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     return nothing
 end
@@ -598,7 +642,6 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 
     if initial_condition == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-        sparce = true
     elseif initial_condition == "triple delta"
         set_phi_as_ic_td!(phip,1)
     elseif initial_condition == "2 layers"

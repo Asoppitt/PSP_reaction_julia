@@ -1,5 +1,5 @@
 import Random
-include("PSP_Particltracking_module.jl")
+include("PSP_Particletracking_module.jl")
 pptr = PSPParticleTrackingReactions
 
 Random.seed!(12345) #setting a seed

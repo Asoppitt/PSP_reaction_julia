@@ -50,22 +50,30 @@ for i in [1]
 end
 conv_error_clt_to_mean_lp=zeros(size(CLT_NVP)[1])
 conv_error_clt_to_mean_kl=zeros(size(CLT_NVP)[1])
+inf_is_0 = final_time_xedge_inf.==0
 for i in 1:size(CLT_NVP)[1]
     conv_error_clt_to_mean_lp[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_inf).^2)*Del_phi
-    conv_error_clt_to_mean_kl[i] = sb.kldivergence(final_time_xedge_CLT[:,i],final_time_xedge_inf)
+    clt_is_0 = final_time_xedge_CLT[:,i].==0
+    exclude_index = (.!clt_is_0) .& inf_is_0
+    conv_error_clt_to_mean_kl[i] = sb.kldivergence(final_time_xedge_CLT[exclude_index,i],final_time_xedge_inf)
 end 
 conv_error_bino_to_mean_lp=zeros(size(binomial_NVP)[1])
 conv_error_bino_to_mean_kl=zeros(size(binomial_NVP)[1])
 for i in 1:size(binomial_NVP)[1]
     conv_error_bino_to_mean_lp[i] = sum(abs.(final_time_xedge_bino[:,i]-final_time_xedge_inf).^2)*Del_phi
-    conv_error_bino_to_mean_kl[i] = sb.kldivergence(final_time_xedge_bino[:,i],final_time_xedge_inf)
+    bino_is_0 = final_time_xedge_bino[:,i].==0
+    exclude_index = (inf_is_0) .& (.!bino_is_0)
+    conv_error_bino_to_mean_kl[i] = sb.kldivergence(final_time_xedge_bino[exclude_index,i],final_time_xedge_inf)
 end 
 n_clt_and_bino = argmax(CLT_NVP[in.(CLT_NVP,[binomial_NVP])])
 conv_error_bino_to_clt_lp=zeros(n_clt_and_bino)
 conv_error_bino_to_clt_kl=zeros(n_clt_and_bino)
 for i in 1:n_clt_and_bino
     conv_error_bino_to_clt_lp[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_bino[:,binomial_NVP.==CLT_NVP[i]]).^2)*Del_phi
-    conv_error_bino_to_clt_kl[i] = sb.kldivergence(final_time_xedge_bino[:,i],final_time_xedge_CLT[:,i])
+    clt_is_0 = final_time_xedge_CLT[:,i].==0
+    bino_is_0 = final_time_xedge_bino[:,i].==0
+    exclude_index = (clt_is_0) .& (.!bino_is_0)
+    conv_error_bino_to_clt_kl[i] = sb.kldivergence(final_time_xedge_bino[exclude_index,i],final_time_xedge_CLT[exclude_index,i])
 end 
 
 plt1 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_lp))
@@ -83,21 +91,41 @@ title!(plt1,"Error of Binomial and Normal compared to Mean model")
 display(plt1)
 plt11 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_kl))
 scatter!(log.(binomial_NVP[1:end]),log.(conv_error_bino_to_mean_kl[1:end]))
+ticks_locs = 10 .^(floor(log10(min(minimum(conv_error_bino_to_mean_kl),
+            minimum(conv_error_clt_to_mean_kl)))):log10(
+            max(maximum(conv_error_bino_to_mean_kl),
+            maximum(conv_error_clt_to_mean_kl))))
+yticks!(log.(ticks_locs),string.(ticks_locs))
 ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP)))
 xticks!(log.(ticks_locs),string.(ticks_locs))
 xlabel!(plt11,"Number of Virtual Particles")
 ylabel!(plt11,"Error in KL Divergence")
 title!(plt11,"Error of Binomial and Normal compared to Mean model")
 display(plt11)
+
+
 plt2 = plot(scatter(log.(CLT_NVP[1:n_clt_and_bino]),log.(conv_error_bino_to_clt_lp)))
-N_range = Array(CLT_NVP[1]:CLT_NVP[n_clt_and_bino])
-plot!(log.(N_range),log.(1 ./sqrt.(2 .*pi.*log.(N_range))))
+# N_range = Array(CLT_NVP[1]:CLT_NVP[n_clt_and_bino])
+# plot!(log.(N_range),log.(1 ./sqrt.(2 .*pi.*log.(N_range))))
 ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP[1:n_clt_and_bino])))
 xticks!(log.(ticks_locs),string.(ticks_locs))
+ticks_locs = 10 .^(floor(log10(minimum(conv_error_bino_to_clt_lp))):log10(maximum(conv_error_bino_to_clt_lp)))
+yticks!(log.(ticks_locs),string.(ticks_locs))
 xlabel!(plt2,"Number of Virtual Particles")
 ylabel!(plt2,"Error in L2 norm")
 title!(plt2,"Error of Binomial compared to Normal")
 display(plt2)
+plt21 = plot(scatter(log.(CLT_NVP[1:n_clt_and_bino]),log.(conv_error_bino_to_clt_kl)))
+# N_range = Array(CLT_NVP[1]:CLT_NVP[n_clt_and_bino])
+# plot!(log.(N_range),log.(1 ./sqrt.(2 .*pi.*log.(N_range))))
+ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP[1:n_clt_and_bino])))
+xticks!(log.(ticks_locs),string.(ticks_locs))
+ticks_locs = 10 .^(floor(log10(minimum(conv_error_bino_to_clt_kl))):log10(maximum(conv_error_bino_to_clt_kl[conv_error_bino_to_clt_kl.<Inf])))
+yticks!(log.(ticks_locs),string.(ticks_locs))
+xlabel!(plt21,"Number of Virtual Particles")
+ylabel!(plt21,"Error in KL Divergence")
+title!(plt21,"Error of Binomial compared to Normal")
+display(plt21)
 plt3=surface(log.(binomial_NVP),psi_spacing,final_time_xedge_bino, color= colormap("RdBu", logscale=true))
 display(plt3)
 surface(log.(CLT_NVP),psi_spacing,final_time_xedge_CLT, color= colormap("RdBu", logscale=true))# xaxis=log)
