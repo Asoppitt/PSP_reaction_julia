@@ -55,7 +55,7 @@ for i in 1:size(CLT_NVP)[1]
     conv_error_clt_to_mean_lp[i] = sum(abs.(final_time_xedge_CLT[:,i]-final_time_xedge_inf).^2)*Del_phi
     clt_is_0 = final_time_xedge_CLT[:,i].==0
     exclude_index = (.!clt_is_0) .& inf_is_0
-    conv_error_clt_to_mean_kl[i] = sb.kldivergence(final_time_xedge_CLT[exclude_index,i],final_time_xedge_inf)
+    conv_error_clt_to_mean_kl[i] = sb.kldivergence(final_time_xedge_CLT[.!exclude_index,i],final_time_xedge_inf[.!exclude_index])
 end 
 conv_error_bino_to_mean_lp=zeros(size(binomial_NVP)[1])
 conv_error_bino_to_mean_kl=zeros(size(binomial_NVP)[1])
@@ -63,7 +63,7 @@ for i in 1:size(binomial_NVP)[1]
     conv_error_bino_to_mean_lp[i] = sum(abs.(final_time_xedge_bino[:,i]-final_time_xedge_inf).^2)*Del_phi
     bino_is_0 = final_time_xedge_bino[:,i].==0
     exclude_index = (inf_is_0) .& (.!bino_is_0)
-    conv_error_bino_to_mean_kl[i] = sb.kldivergence(final_time_xedge_bino[exclude_index,i],final_time_xedge_inf)
+    conv_error_bino_to_mean_kl[i] = sb.kldivergence(final_time_xedge_bino[.!exclude_index,i],final_time_xedge_inf[.!exclude_index])
 end 
 n_clt_and_bino = argmax(CLT_NVP[in.(CLT_NVP,[binomial_NVP])])
 conv_error_bino_to_clt_lp=zeros(n_clt_and_bino)
@@ -73,7 +73,7 @@ for i in 1:n_clt_and_bino
     clt_is_0 = final_time_xedge_CLT[:,i].==0
     bino_is_0 = final_time_xedge_bino[:,i].==0
     exclude_index = (clt_is_0) .& (.!bino_is_0)
-    conv_error_bino_to_clt_kl[i] = sb.kldivergence(final_time_xedge_bino[exclude_index,i],final_time_xedge_CLT[exclude_index,i])
+    conv_error_bino_to_clt_kl[i] = sb.kldivergence(final_time_xedge_bino[.!exclude_index,i],final_time_xedge_CLT[.!exclude_index,i])
 end 
 
 plt1 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_lp))
@@ -91,8 +91,8 @@ title!(plt1,"Error of Binomial and Normal compared to Mean model")
 display(plt1)
 plt11 = scatter(log.(CLT_NVP),log.(conv_error_clt_to_mean_kl))
 scatter!(log.(binomial_NVP[1:end]),log.(conv_error_bino_to_mean_kl[1:end]))
-ticks_locs = 10 .^(floor(log10(min(minimum(conv_error_bino_to_mean_kl),
-            minimum(conv_error_clt_to_mean_kl)))):log10(
+ticks_locs = 10 .^(floor(log10(min(minimum(conv_error_bino_to_mean_kl[conv_error_bino_to_mean_kl.>0]),
+            minimum(conv_error_clt_to_mean_kl[conv_error_clt_to_mean_kl.>0])))):log10(
             max(maximum(conv_error_bino_to_mean_kl),
             maximum(conv_error_clt_to_mean_kl))))
 yticks!(log.(ticks_locs),string.(ticks_locs))
@@ -120,7 +120,8 @@ plt21 = plot(scatter(log.(CLT_NVP[1:n_clt_and_bino]),log.(conv_error_bino_to_clt
 # plot!(log.(N_range),log.(1 ./sqrt.(2 .*pi.*log.(N_range))))
 ticks_locs = 2 .^(floor(log2(minimum(CLT_NVP))):log2(maximum(CLT_NVP[1:n_clt_and_bino])))
 xticks!(log.(ticks_locs),string.(ticks_locs))
-ticks_locs = 10 .^(floor(log10(minimum(conv_error_bino_to_clt_kl))):log10(maximum(conv_error_bino_to_clt_kl[conv_error_bino_to_clt_kl.<Inf])))
+ticks_locs = 10 .^(floor(log10(minimum(conv_error_bino_to_clt_kl[conv_error_bino_to_clt_kl.>0]))):
+            log10(maximum(conv_error_bino_to_clt_kl[0 .<conv_error_bino_to_clt_kl.<Inf])))
 yticks!(log.(ticks_locs),string.(ticks_locs))
 xlabel!(plt21,"Number of Virtual Particles")
 ylabel!(plt21,"Error in KL Divergence")

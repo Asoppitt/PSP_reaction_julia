@@ -2,9 +2,9 @@ using OrdinaryDiffEq, ModelingToolkit, DiffEqOperators, Plots; plotlyjs()
 
 k = 0.938
 C_0 = 2.1
-omega_mean=5
+omega_mean=1.0
 B=(1.5*C_0)
-bc_k=0.25
+bc_k=1.0
 D=2*C_0*k/((B^2)*omega_mean)
 height_domain =0.04
 
