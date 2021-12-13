@@ -413,16 +413,16 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     uxp = randn(np).*sqrt.(2/3 .*turb_k_e[:,1])
     uyp = randn(np).*sqrt.(2/3 .*turb_k_e[:,1])
     for t=1:nt
+        uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
+        uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
         for i in 1:space_cells.y_res
             in_y = space_cells.y_edges[i].<y_pos[:,t].<space_cells.y_edges[i+1]
             for j in 1:x_res
                 in_x = space_cells.x_edges[j].<x_pos[:,t].<space_cells.x_edges[j+1]
                 cell_particles = findall(in_x.&in_y)
-                turb_k_e[cell_particles,t].=0.5*(st.mean(uxp[cell_particles].^2)+st.mean(uyp[cell_particles].^2))*1.5 #turb_e_init;
+                turb_k_e[cell_particles,t+1].=0.5*(st.mean(uxp[cell_particles].^2)+st.mean(uyp[cell_particles].^2))*1.5 #turb_e_init;
             end
         end
-        uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
-        uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
         uxp_full = u_mean .+ uxp
         x_pos[:,t+1] = x_pos[:,t] + (uxp_full)*dt # random walk in x-direction
         y_pos[:,t+1] = y_pos[:,t] + uyp*dt # random walk in y-direction
@@ -662,7 +662,6 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 
     for t in 1:nt
         verbose && print(t,' ')
-        bc_absorbtion!(phip,bc_interact[:,t,2],turb_k_e[bc_interact[:,t,2],t],bc_params,t) #currently only reacting on bottom bc
         # print(maximum(phip[:,:,t]),' ')
         #E-M solver for omega 
         dw = sqrt(dt).*randn(np) #random draws
@@ -740,7 +739,9 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
         end
 
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        bc_absorbtion!(phip,bc_interact[:,t,2],turb_k_e[bc_interact[:,t,2],t+1],bc_params,t+1) #currently only reacting on bottom bc
+
+        assign_f_phi!(f_phi,phip[:,:,t+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         # print(maximum(phip[:,:,t]),' ')
     end
     verbose && println("end")
@@ -787,7 +788,6 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 
     for t in 1:nt
         verbose && print(t,' ')
-        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,t, precomp_P) #currently only reacting on bottom bc
         #E-M solver for omega 
         dw = sqrt(dt).*randn(np) #random draws
         omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
@@ -865,6 +865,8 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
         end
 
+        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,t+1, precomp_P) #currently only reacting on bottom bc
+
         assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
         # print(maximum(phip[:,:,t]),' ')
     end
@@ -881,7 +883,6 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
-    println(precomp_P)
 
     phip = zeros((2, np, nt+1)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
@@ -912,18 +913,6 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
 
     for t in 1:nt
         verbose && print(t,' ')
-        # set_phi_as_ic_up1!(phip,t, bc_interact[:,t,3] .| bc_interact[:,t,4])#set incoming particles to same as ic
-        phip_diff = phip[:,:,t]
-        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t, precomp_P) #currently only reacting on bottom bc
-        phip_diff -= phip[:,:,t]
-        try
-            eval_by_cell!((i,j,cell_particles)-> (if i==1;assign_f_phi_cell!(y_0_flux,phip_diff[:,cell_particles],psi_mesh,i,j,t)
-            ; end;return nothing) , x_pos[:,t], y_pos[:,t], space_cells)
-        catch
-            println(maximum(phip_diff[1,:]),' ',maximum(phip_diff[2,:]))
-            println(psi_mesh.phi_domain)
-            rethrow()
-        end
         #E-M solver for omega 
         dw = sqrt(dt).*randn(np) #random draws
         omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
@@ -999,6 +988,18 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         phip[:,:,t+1] = phip[:,:,t]+dphi
         if !(initial_condition == "triple delta")
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
+        end
+        #bcs give modification for phi based on interaction between t=t and t=t+1
+        set_phi_as_ic_up1!(phip,t+1, bc_interact[:,t,3] .| bc_interact[:,t,4])#set incoming particles to same as ic
+        phip_diff = phip[:,:,t+1]
+        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t+1, precomp_P) #currently only reacting on bottom bc
+        phip_diff -= phip[:,:,t+1]
+        try
+            eval_by_cell!((i,j,cell_particles)-> (if i==1;assign_f_phi_cell!(y_0_flux,phip_diff[:,cell_particles[bc_interact[cell_particles,t,2]]],psi_mesh,i,j,t)
+            ; end;return nothing) , x_pos[:,t+1], y_pos[:,t+1], space_cells)
+        catch
+            
+            rethrow()
         end
 
         assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
