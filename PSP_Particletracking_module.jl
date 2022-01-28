@@ -58,7 +58,7 @@ end
 
 function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
     if B_format == "Decay"
-        return MotionParams(omega_bar, C_0, (0.5+1.5*C_0), u_mean)
+        return MotionParams(omega_bar, C_0, (1+1.5*C_0), u_mean)
     elseif B_format == "Constant"
         return MotionParams(omega_bar, C_0, (1.5*C_0), u_mean)
     end
@@ -66,7 +66,7 @@ end
 
 function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:Int
     if B_format == "Decay"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (0.5+1.5*C_0),num_vp)
+        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp)
     elseif B_format == "Constant"
         return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp)
     end
@@ -75,7 +75,7 @@ end
 function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:AbstractFloat
     num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
     if B_format == "Decay"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (0.5+1.5*C_0),num_vp)
+        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp)
     elseif B_format == "Constant"
         return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp)
     end
@@ -413,8 +413,8 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     uxp = randn(np).*sqrt.(2/3 .*turb_k_e[:,1])
     uyp = randn(np).*sqrt.(2/3 .*turb_k_e[:,1])
     for t=1:nt
-        uxp = uxp+(-B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
-        uyp = uyp+(-B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
+        uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
+        uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e[:,t].*omega_bar.*dt); 
         for i in 1:space_cells.y_res
             in_y = space_cells.y_edges[i].<y_pos[:,t].<space_cells.y_edges[i+1]
             for j in 1:x_res
@@ -489,8 +489,8 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     uxp = randn(np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(np).*sqrt.(2/3 .*turb_k_e)
     for t=1:nt
-        uxp = uxp+(-B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
-        uyp = uyp+(-B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
+        uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
+        uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
         uxp_full = u_mean .+ uxp
         x_pos[:,t+1] = x_pos[:,t] + (uxp_full)*dt # random walk in x-direction
         y_pos[:,t+1] = y_pos[:,t] + uyp*dt # random walk in y-direction
