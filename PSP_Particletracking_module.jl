@@ -58,17 +58,17 @@ end
 
 function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
     if B_format == "Decay"
-        return MotionParams(omega_bar, C_0, (1+1.5*C_0), u_mean)
+        return MotionParams(omega_bar, C_0, (1+T(1.5)*C_0), u_mean)
     elseif B_format == "Constant"
-        return MotionParams(omega_bar, C_0, (1.5*C_0), u_mean)
+        return MotionParams(omega_bar, C_0, (T(1.5)*C_0), u_mean)
     end
 end
 
 function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:Int
     if B_format == "Decay"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp)
+        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp)
     elseif B_format == "Constant"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp)
+        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp)
     end
 end
 
@@ -833,7 +833,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
     omega0_dist = Gamma(1/(omega_sigma_2),(omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
-    omegap[:,1] = rand(omega0_dist, T, np)
+    omegap[:,1] = rand(omega0_dist, np)
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
     ;assign_f_phi_cell!(f_phi,phip[:,cell_particles,1],psi_mesh,i,j,1);return nothing) , x_pos[:,1], y_pos[:,1], space_cells)
@@ -958,7 +958,7 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
         omega0_dist = Gamma(1/(omega_sigma_2),(omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
-    omegap[:,1] = rand(omega0_dist,T, np)
+    omegap[:,1] = rand(omega0_dist, np)
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
     ;assign_f_phi_cell!(f_phi,phip[:,cell_particles,1],psi_mesh,i,j,1);return nothing) , x_pos[:,1], y_pos[:,1], space_cells)
