@@ -119,6 +119,65 @@ function assign_pm_single!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles
     return nothing
 end
 
+function pm_check_and_recal_for_cell_change!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, cell_particles::Vector{Int}) where T<:AbstractFloat
+    
+    p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
+    m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
+    if (any(m_nin)||any(p_nin))
+        #split into partitions in dim 2, use a sort based approach within each bin
+        n_partition = 10 #a hidden parameter - great coding here
+        cell_particles_sort_perm_2 = sortperm(phi_array_t[2,cell_particles])
+        cell_particles_sorts = [[cell_particles[cell_particles_sort_perm_1[
+            floor(Int, i/n_partition*length(cell_particles))+1:floor(Int, (i+1)/n_partition*length(cell_particles))]]]
+            for i=0:(n_partition-1)]
+        for (index,list) in ennumerate(cell_particles_sorts)
+            cell_particles_sorts[index] = list[sortperm(phi_array_t[1,list])]
+        end
+        for (p_or_m, nin) in [p_nin,m_nin]
+            for part in cell_particles[nin]
+                index_2=1
+                #find which bin
+                for list in cell_particles_sorts
+                    if phi_array_t[2,list[end]]>phi_array_t[2,phi_pm[p_or_m,part]]
+                        break
+                    else
+                        index_2+=1
+                    end
+                end
+                list=cell_particles_sorts[index_2]
+                #find within bin
+                N_list=length(list)
+                index_1=0
+                for split_num = 1:floor(Int,log2(N_list))
+                    #search by splitting
+                    if phi_array_t[1,list[index_1+floor(Int,N_list/(2^split_num))]] >= phi_array_t[1,phi_pm[p_or_m,part]]
+                        index_1+=floor(Int,N_list/(2^split_num))
+                    end
+                end
+                index_1==0&&(index_1=1)#use index 1 if loxwer than everything
+                #test condition is held
+                for i=1:length(list)
+                    test_dot = la.dot((phi_array_t[:,list[index_1]]-phi_array_t[:,part]),(phi_array_t[:,phi_pm[1-(p_or_m-1)+1,part]]-phi_array_t[:,part]))
+                    if test_dot<=0
+                        break
+                    else
+                        i>=length(list) && throw(ErrorException("couldn't find phi_pm"))
+                        new_index=index_1+(-1)^i*i#propose a new index in case of failure
+                        if new_index<0
+                            new_index=index_1+1
+                        elseif new_index>length(list)
+                            new_index=index_1-1
+                        end
+                        index_1=new_index
+                    end
+                end
+                phi_pm[p_or_m,part]=list[index_1]
+            end
+        end
+    end
+    return nothing
+end
+
 function set_phi_as_ic_up1!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
     #Initial_condition == "Uniform phi1"
     nparticles = size(phi_array)[2]
@@ -358,14 +417,14 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
     P[1,:] = min.(abs_k[1,:].*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
     P[2,:] = min.(abs_k[2,:].*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
     #Binomal dist for number of virtual particles to have reacted
-    xi_dist = Binomial.(TF, ceil.(effective_v_particles),1 .-P)
+    xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
     xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
     ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     return nothing
 end
 
-#binomal prcomp
+#binomal precomp
 function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
@@ -373,7 +432,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::
     P = zeros(TF,2,n_abs)
     P .= Precomp_P
     #Binomal dist for number of virtual particles to have reacted
-    xi_dist = Binomial.(TF,ceil.(effective_v_particles),1 .-P)
+    xi_dist = Binomial.(ceil.(effective_v_particles),1 .-P)
     xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
     ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
@@ -727,26 +786,30 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
         t_decorr_m = t_decorr_m.-dt;
-        #sets index of those to be renewed with 0 - which doesn't correspond to any particle
-        phi_pm[1,(t_decorr_p.<=0)] .= 0 
-        phi_pm[2,(t_decorr_m.<=0)] .= 0
+        #finding particles needing new pairs
+        t_p0 = t_decorr_p.<=0
+        t_m0 = t_decorr_m.<=0
+        t_pm0 = t_p0 .& t_m0
+        t_p0 = xor(t_p0,t_pm0)
+        t_m0 = xor(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
+            #reassigning particles that completed decorrelation time
+            t_p0_cell = findall(t_p0[cell_particles])
+            t_m0_cell = findall(t_m0[cell_particles])
+            t_pm0_cell = findall(t_pm0[cell_particles])
+            (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
+            (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
+            (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
-            m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
-            pm_nin = p_nin .& m_nin
-            p_nin = xor.(p_nin , pm_nin)
-            m_nin = xor.(m_nin , pm_nin)
-            (sum(p_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[p_nin], cell_particles, 1)
-            (sum(m_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[m_nin], cell_particles, 2)
-            (sum(pm_nin)>0)&&assign_pm!(phi_pm, phip[:,:,t], cell_particles[pm_nin], cell_particles)
-            t_decorr_p[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[1,cell_particles[pm_nin.&p_nin]],1])
-            t_decorr_m[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[2,cell_particles[pm_nin.&m_nin]],2])
+            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
+        #reset decorrelation time for particles it had run out on
+        t_decorr_p[t_p0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[1,t_p0.&t_pm0],t])
+        t_decorr_m[t_m0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[2,t_m0.&t_pm0],t])
 
         phi_c = 0.5.*(phip[:,phi_pm[1,:],t]+phip[:,phi_pm[2,:],t])
         diffusion = zeros(2,np)
@@ -853,26 +916,30 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
         t_decorr_m = t_decorr_m.-dt;
-        #sets index of those to be renewed with 0 - which doesn't correspond to any particle
-        phi_pm[1,(t_decorr_p.<=0)] .= 0 #the t_decorrs are 2d for some reason
-        phi_pm[2,(t_decorr_m.<=0)] .= 0
+        #finding particles needing new pairs
+        t_p0 = t_decorr_p.<=0
+        t_m0 = t_decorr_m.<=0
+        t_pm0 = t_p0 .& t_m0
+        t_p0 = xor(t_p0,t_pm0)
+        t_m0 = xor(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
+            #reassigning particles that completed decorrelation time
+            t_p0_cell = findall(t_p0[cell_particles])
+            t_m0_cell = findall(t_m0[cell_particles])
+            t_pm0_cell = findall(t_pm0[cell_particles])
+            (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
+            (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
+            (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
-            m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
-            pm_nin = p_nin .& m_nin
-            p_nin = xor.(p_nin , pm_nin)
-            m_nin = xor.(m_nin , pm_nin)
-            (sum(p_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[p_nin], cell_particles, 1)
-            (sum(m_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[m_nin], cell_particles, 2)
-            (sum(pm_nin)>0)&&assign_pm!(phi_pm, phip[:,:,t], cell_particles[pm_nin], cell_particles)
-            t_decorr_p[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[1,cell_particles[pm_nin.&p_nin]],1])
-            t_decorr_m[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[2,cell_particles[pm_nin.&m_nin]],2])
+            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
+        #reset decorrelation time for particles it had run out on
+        t_decorr_p[t_p0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[1,t_p0.&t_pm0],t])
+        t_decorr_m[t_m0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[2,t_m0.&t_pm0],t])
 
         phi_c = 0.5.*(phip[:,phi_pm[1,:],t]+phip[:,phi_pm[2,:],t])
         diffusion = zeros(T, 2,np)
@@ -978,26 +1045,30 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
         t_decorr_m = t_decorr_m.-dt;
-        #sets index of those to be renewed with 0 - which doesn't correspond to any particle
-        phi_pm[1,(t_decorr_p.<=0)] .= 0 #the t_decorrs are 2d for some reason
-        phi_pm[2,(t_decorr_m.<=0)] .= 0
+        #finding particles needing new pairs
+        t_p0 = t_decorr_p.<=0
+        t_m0 = t_decorr_m.<=0
+        t_pm0 = t_p0 .& t_m0
+        t_p0 = xor(t_p0,t_pm0)
+        t_m0 = xor(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
+            #reassigning particles that completed decorrelation time
+            t_p0_cell = findall(t_p0[cell_particles])
+            t_m0_cell = findall(t_m0[cell_particles])
+            t_pm0_cell = findall(t_pm0[cell_particles])
+            (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
+            (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
+            (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
-            m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
-            pm_nin = p_nin .& m_nin
-            p_nin = xor.(p_nin , pm_nin)
-            m_nin = xor.(m_nin , pm_nin)
-            (sum(p_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[p_nin], cell_particles, 1)
-            (sum(m_nin)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],cell_particles[m_nin], cell_particles, 2)
-            (sum(pm_nin)>0)&&assign_pm!(phi_pm, phip[:,:,t], cell_particles[pm_nin], cell_particles)
-            t_decorr_p[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[1,cell_particles[pm_nin.&p_nin]],1])
-            t_decorr_m[cell_particles[pm_nin.&p_nin]] = 1 ./(c_t.*omegap[phi_pm[2,cell_particles[pm_nin.&m_nin]],2])
+            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
+        #reset decorrelation time for particles it had run out on
+        t_decorr_p[t_p0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[1,t_p0.&t_pm0],t])
+        t_decorr_m[t_m0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[2,t_m0.&t_pm0],t])
 
         phi_c = 0.5.*(phip[:,phi_pm[1,:],t]+phip[:,phi_pm[2,:],t])
         diffusion = zeros(2,np)
