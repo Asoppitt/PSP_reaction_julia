@@ -120,60 +120,98 @@ function assign_pm_single!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles
 end
 
 function pm_check_and_recal_for_cell_change!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, cell_particles::Vector{Int}) where T<:AbstractFloat
-    
     p_nin = .!(in.(phi_pm[1,cell_particles],Ref(cell_particles)))
     m_nin = .!(in.(phi_pm[2,cell_particles],Ref(cell_particles)))
     if (any(m_nin)||any(p_nin))
         #split into partitions in dim 2, use a sort based approach within each bin
-        n_partition = 10 #a hidden parameter - great coding here
-        cell_particles_sort_perm_2 = sortperm(phi_array_t[2,cell_particles])
-        cell_particles_sorts = [[cell_particles[cell_particles_sort_perm_1[
-            floor(Int, i/n_partition*length(cell_particles))+1:floor(Int, (i+1)/n_partition*length(cell_particles))]]]
+        n_partition = floor(Int,sqrt(length(cell_particles))) 
+        cell_particles_sort_perm_1 = sortperm(phi_array_t[1,cell_particles])
+        cell_particles_sorts = [cell_particles[cell_particles_sort_perm_1[
+            floor(Int, i/n_partition*length(cell_particles))+1:floor(Int, (i+1)/n_partition*length(cell_particles))]]
             for i=0:(n_partition-1)]
-        for (index,list) in ennumerate(cell_particles_sorts)
-            cell_particles_sorts[index] = list[sortperm(phi_array_t[1,list])]
+        #use to define the edge of the bins
+        cell_particles_mins = [cell_particles_sorts[i][1] for i in 1:n_partition]
+        for (index,list) in enumerate(cell_particles_sorts)
+            cell_particles_sorts[index] = list[sortperm(phi_array_t[2,list])]
         end
-        for (p_or_m, nin) in [p_nin,m_nin]
+        for (p_or_m, nin) in enumerate([p_nin,m_nin])
             for part in cell_particles[nin]
-                index_2=1
+                index_1_float=0.0
                 #find which bin
-                for list in cell_particles_sorts
-                    if phi_array_t[2,list[end]]>phi_array_t[2,phi_pm[p_or_m,part]]
-                        break
-                    else
-                        index_2+=1
+                for i in 1:ceil(Int,log2(n_partition))
+                    if phi_array_t[1,cell_particles_mins[floor(Int,index_1_float+n_partition/(2^i))+1]] <= phi_array_t[1,phi_pm[p_or_m,part]]
+                        index_1_float+=n_partition/(2^i)
                     end
                 end
-                list=cell_particles_sorts[index_2]
-                #find within bin
-                N_list=length(list)
-                index_1=0
-                for split_num = 1:floor(Int,log2(N_list))
-                    #search by splitting
-                    if phi_array_t[1,list[index_1+floor(Int,N_list/(2^split_num))]] >= phi_array_t[1,phi_pm[p_or_m,part]]
-                        index_1+=floor(Int,N_list/(2^split_num))
+                index_1=floor(Int,index_1_float)+1
+                index_2=0#defining index
+                succ = false
+                low_high_normal_1=0
+                for j in 1:n_partition
+                    #find within bin
+                    index_2_float=0.0
+                    for split_num = 1:ceil(Int,log2(length(cell_particles_sorts[index_1])))
+                        #search by splitting
+                        if phi_array_t[2,cell_particles_sorts[index_1][floor(Int,index_2_float+length(cell_particles_sorts[index_1])/(2^split_num))+1]] <= phi_array_t[2,phi_pm[p_or_m,part]]
+                            index_2_float+=length(cell_particles_sorts[index_1])/(2^split_num)
+                        end
                     end
-                end
-                index_1==0&&(index_1=1)#use index 1 if loxwer than everything
-                #test condition is held
-                for i=1:length(list)
-                    test_dot = la.dot((phi_array_t[:,list[index_1]]-phi_array_t[:,part]),(phi_array_t[:,phi_pm[1-(p_or_m-1)+1,part]]-phi_array_t[:,part]))
-                    if test_dot<=0
+                    index_2 = floor(Int,index_2_float)+1
+                    #test condition is held
+                    low_high_normal=0#a code to see what type of search to use
+                    succ=false
+                    for i=1:length(cell_particles_sorts[index_1])
+                        test_dot = la.dot((phi_array_t[:,cell_particles_sorts[index_1][index_2]]-phi_array_t[:,part]),(phi_array_t[:,phi_pm[1-(p_or_m-1)+1,part]]-phi_array_t[:,part]))
+                        if test_dot<=0
+                            succ=true
+                            break
+                        else
+                            if low_high_normal==0
+                                new_index=index_2+(-1)^i*i#propose a new index in case of failure
+                                if new_index<=0
+                                    low_high_normal = 1
+                                    new_index=index_2+1
+                                elseif new_index>length(cell_particles_sorts[index_1])
+                                    low_high_normal = 2
+                                    new_index=index_2-1
+                                end
+                            elseif low_high_normal==1
+                                new_index=index_2+1
+                            else
+                                new_index=index_2-1
+                            end
+                            index_2=new_index
+                        end
+                    end
+                    if succ
                         break
                     else
-                        i>=length(list) && throw(ErrorException("couldn't find phi_pm"))
-                        new_index=index_1+(-1)^i*i#propose a new index in case of failure
-                        if new_index<0
+                        if low_high_normal_1==0
+                            new_index=index_1+(-1)^j*j#propose a new index in case of failure
+                            if new_index<=0
+                                low_high_normal_1 = 1
+                                new_index=index_1+1
+                            elseif new_index>n_partition
+                                low_high_normal_1 = 2
+                                new_index=index_1-1
+                            end
+                        elseif low_high_normal_1==1
                             new_index=index_1+1
-                        elseif new_index>length(list)
+                        else
                             new_index=index_1-1
                         end
                         index_1=new_index
                     end
                 end
-                phi_pm[p_or_m,part]=list[index_1]
+                if succ
+                    phi_pm[p_or_m,part]=cell_particles_sorts[index_1][index_2]
+                else
+                    throw(ErrorException("couldn't find pair"))
+                end
             end
         end
+    else
+        # print("nothing to reassign") # probably should hide this in a verbosity setting
     end
     return nothing
 end
@@ -790,21 +828,21 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         t_p0 = t_decorr_p.<=0
         t_m0 = t_decorr_m.<=0
         t_pm0 = t_p0 .& t_m0
-        t_p0 = xor(t_p0,t_pm0)
-        t_m0 = xor(t_m0,t_pm0)
+        t_p0 = xor.(t_p0,t_pm0)
+        t_m0 = xor.(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
             #reassigning particles that completed decorrelation time
-            t_p0_cell = findall(t_p0[cell_particles])
-            t_m0_cell = findall(t_m0[cell_particles])
-            t_pm0_cell = findall(t_pm0[cell_particles])
+            t_p0_cell = cell_particles[t_p0[cell_particles]]
+            t_m0_cell = cell_particles[t_m0[cell_particles]]
+            t_pm0_cell = cell_particles[t_pm0[cell_particles]]
             (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
             (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
             (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
+            pm_check_and_recal_for_cell_change!(phi_pm, phip[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
         #reset decorrelation time for particles it had run out on
@@ -920,21 +958,21 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         t_p0 = t_decorr_p.<=0
         t_m0 = t_decorr_m.<=0
         t_pm0 = t_p0 .& t_m0
-        t_p0 = xor(t_p0,t_pm0)
-        t_m0 = xor(t_m0,t_pm0)
+        t_p0 = xor.(t_p0,t_pm0)
+        t_m0 = xor.(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
             #reassigning particles that completed decorrelation time
-            t_p0_cell = findall(t_p0[cell_particles])
-            t_m0_cell = findall(t_m0[cell_particles])
-            t_pm0_cell = findall(t_pm0[cell_particles])
+            t_p0_cell = cell_particles[t_p0[cell_particles]]
+            t_m0_cell = cell_particles[t_m0[cell_particles]]
+            t_pm0_cell = cell_particles[t_pm0[cell_particles]]
             (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
             (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
             (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
+            pm_check_and_recal_for_cell_change!(phi_pm, phip[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
         #reset decorrelation time for particles it had run out on
@@ -1049,8 +1087,8 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         t_p0 = t_decorr_p.<=0
         t_m0 = t_decorr_m.<=0
         t_pm0 = t_p0 .& t_m0
-        t_p0 = xor(t_p0,t_pm0)
-        t_m0 = xor(t_m0,t_pm0)
+        t_p0 = xor.(t_p0,t_pm0)
+        t_m0 = xor.(t_m0,t_pm0)
 
         #split into cells, compute centres/targets, run ODE step
         eval_by_cell!(function (i,j,cell_particles)
@@ -1063,7 +1101,7 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
             (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
             (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
             #update pairs to ensure all are within the same bounds
-            pm_check_and_recal_for_cell_change!(phi_pm, phi[:,:,t], cell_particles)
+            pm_check_and_recal_for_cell_change!(phi_pm, phip[:,:,t], cell_particles)
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
         #reset decorrelation time for particles it had run out on
