@@ -3,19 +3,22 @@ include("PSP_Particletracking_module.jl")
 pptr = PSPParticleTrackingReactions
 
 
-base_filename="Data/paper/PSP_off_uniform_1_5x100_02_001_c_0_21_k_0938_w_varied_new_abs_Inf_vp_psi50_2000resparts_bck_03"
+base_filename="Data/paper/PSP_off_uniform_1_10x50_005_001_c_0_21_k_0938_w_varied_new_abs_Inf_vp_psi50_2000resparts_bck_03_dt0001"
 
-n=5
-x_res=n*20 #number of cells in x dim
+# run(`mkdir $base_filename`)
+
+n=10
+x_res=n*5 #number of cells in x dim
 y_res=n
 np = x_res*y_res*2000 # number of particles
-dt = 0.002  # time step
-nt = 60   # number of time steps
-length_domain = 0.20 #length of periodic element
+dt = 0.001  # time step
+nt = 200   # number of time steps
+length_domain = 0.05 #length of periodic element
 height_domain = 0.01
 psi_partions_num = 50
 psi_domain = [0.0,1.2]
-omega_bar = [7.5,12.5,17.5,22.5]
+omega_bar = [22.5,25]
+# append!(omega_bar,2.5:2.5:25)
 omega_sigma_2 = 0.25
 C_0 = 2.1
 B_format = "Constant"
@@ -38,7 +41,7 @@ flux = zeros(psi_partions_num, psi_partions_num, 1, x_res, nt)
 write(base_filename*"/test",' ')#check folders exist
 
 N_runs = length(omega_bar)
-seed_array = zeros(UInt32,4,10)
+seed_array = zeros(UInt32,4,N_runs)
 for i=1:N_runs
     mix_params, move_params, bc_params = pptr.PSP_motion_bc_params(omega_bar[i], omega_sigma_2, C_0, B_format, c_phi, c_t, u_mean, bc_k, Inf, true)
     rng=Random.seed!() #setting a seed
