@@ -85,6 +85,8 @@ function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::
     return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
 end
 
+
+
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles::Vector{Int}, cell_points::Vector{Int}) where T<:AbstractFloat
     # might be worth a strategy that removes tested pairs, can't see how to make it not require a biiiig temp variable though 
     for particle in particles
@@ -322,11 +324,10 @@ function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractA
     f_phi_cell[phi1_i-1, phi2_i-1, cell_row, cell_column, t_index] = float(accum)
 
     f_phi_cell[:, :,cell_row, cell_column, t_index] = f_phi_cell[:,:,cell_row, cell_column, t_index]./(size(phi_array)[2])
-    any(f_phi_cell[:, :, cell_row, cell_column, t_index] .!= f_phi_cell[:, :, cell_row, cell_column, t_index]) && (print("error",' ',size(phi_array),' '), qwertuio)
     return nothing
 end 
 
-function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Vector{TF}, yp::Vector{TF}, psi_mesh::PsiGrid{TF}, space_cells::CellGrid{TF}, t_index::Int) where TF <: AbstractFloat
+function assign_f_phi!(f_phi_t::AbstractArray{TF},phi_array::AbstractArray{TF}, xp::AbstractVector{TF}, yp::AbstractVector{TF}, psi_mesh::PsiGrid{TF}, space_cells::CellGrid{TF}, t_index::Int) where TF <: AbstractFloat
     x_sort = sortperm(xp)
     x_i = 2 #assuming no values outside range
     prev_stop_x = 1
@@ -365,6 +366,56 @@ function assign_f_phi!(f_phi_t::Array{TF},phi_array::Array{TF}, xp::Vector{TF}, 
         end
     end
     assign_f_phi_cell!(f_phi_t, phi_array[:,y_sort[prev_stop_y:current_j]], psi_mesh, y_i-1, x_i-1, t_index)
+    return nothing
+end 
+
+function assign_f_edge_cell!(f_edge_cell::AbstractArray{TF,4},phi_array::AbstractArray{TF,2},psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
+    "use if cell_points has alreday been determined"
+    phi_array_sort_ind_1 = sortperm(phi_array[1,:])
+    phi1_i = 2 #upper bound index #assuming no values outside range
+    prev_stop_1 = 1
+    current_i = 0
+    for i in phi_array_sort_ind_1
+        current_i += 1
+        while phi_array[1,i] > psi_mesh.psi_1[phi1_i]
+            phi_array_sort_ind_2 = phi_array_sort_ind_1[sortperm(phi_array[2,phi_array_sort_ind_1[prev_stop_1:current_i-1]]).+prev_stop_1.-1]
+            accum = 0
+            phi2_i = 2
+            for j in phi_array_sort_ind_2
+                while phi_array[2,j] > psi_mesh.psi_2[phi2_i]
+                    f_edge_cell[phi1_i-1, phi2_i-1, cell_row, t_index] = float(accum)
+                    accum = 0
+                    phi2_i += 1
+                end
+                accum +=1
+            end
+            try 
+                f_edge_cell[phi1_i-1, phi2_i-1, cell_row, t_index] = float(accum)
+            catch 
+                println(phi1_i,' ', phi2_i,' ', cell_row,' ', cell_column,' ', t_index)
+                println(maximum(phi_array[1,:]),' ',maximum(phi_array[2,:]))
+                println(psi_mesh.phi_domain)
+                rethrow()
+            end
+            prev_stop_1 = current_i
+            phi1_i +=1
+        end
+    end
+    #catch those for which there are no higher points
+    phi_array_sort_ind_2 = phi_array_sort_ind_1[sortperm(phi_array[2,phi_array_sort_ind_1[prev_stop_1:current_i]]).+prev_stop_1.-1]
+    accum = 0
+    phi2_i = 2
+    for j in phi_array_sort_ind_2
+        while phi_array[2,j] > psi_mesh.psi_2[phi2_i]
+            f_phi_cell[phi1_i-1, phi2_i-1, cell_row, t_index] = float(accum)
+            accum = 0
+            phi2_i += 1
+        end
+        accum +=1
+    end
+    f_edge_cell[phi1_i-1, phi2_i-1, cell_row, t_index] = float(accum)
+
+    f_edge_cell[:, :,cell_row, t_index] = f_edge_cell[:,:,cell_row, t_index]./(size(phi_array)[2])
     return nothing
 end 
 
@@ -1036,7 +1087,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     return nothing
 end
 
-function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squared::AbstractArray{T,1}, f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1062,7 +1113,7 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
     end
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
-        omega0_dist = Gamma(1/(omega_sigma_2),(omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
+    omega0_dist = Gamma(1/(omega_sigma_2),(omega_sigma_2)*omega_mean) #this should now match long term distribution of omega
     omegap[:,1] = rand(omega0_dist, np)
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
@@ -1094,9 +1145,9 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         eval_by_cell!(function (i,j,cell_particles)
             (length(cell_particles)==0) && throw(BoundsError(cell_particles))
             #reassigning particles that completed decorrelation time
-            t_p0_cell = findall(t_p0[cell_particles])
-            t_m0_cell = findall(t_m0[cell_particles])
-            t_pm0_cell = findall(t_pm0[cell_particles])
+            t_p0_cell = cell_particles[t_p0[cell_particles]]
+            t_m0_cell = cell_particles[t_m0[cell_particles]]
+            t_pm0_cell = cell_particles[t_pm0[cell_particles]]
             (length(t_p0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_p0_cell, cell_particles, 1)
             (length(t_m0_cell)>0)&&assign_pm_single!(phi_pm, phip[:,:,t],t_m0_cell, cell_particles, 2)
             (length(t_pm0_cell)>0)&&assign_pm!(phi_pm, phip[:,:,t], t_pm0_cell, cell_particles)
@@ -1109,10 +1160,10 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         t_decorr_m[t_m0.&t_pm0] = 1 ./(c_t.*omegap[phi_pm[2,t_m0.&t_pm0],t])
 
         phi_c = 0.5.*(phip[:,phi_pm[1,:],t]+phip[:,phi_pm[2,:],t])
-        diffusion = zeros(2,np)
+        diffusion = zeros(T, 2,np)
         diffusion[1,:] = (phip[1,:,t]-phi_c[1,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
         diffusion[2,:] = (phip[2,:,t]-phi_c[2,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
-        reaction = zeros(2,np) # body reaction
+        reaction = zeros(T, 2,np) # body reaction
         # reaction = dt.*(reaction).*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
         dphi = (diffusion .+ reaction)
 
@@ -1155,20 +1206,16 @@ function PSP_model_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_
         if !(initial_condition == "triple delta")
             phip[:,:,t+1] = phip[:,:,t+1].*(phip[:,:,t+1].>0) #forcing positive concentration
         end
-        #bcs give modification for phi based on interaction between t=t and t=t+1
-        set_phi_as_ic_up1!(phip,t+1, bc_interact[:,t,3] .| bc_interact[:,t,4])#set incoming particles to same as ic
-        phip_diff = phip[:,:,t+1]
-        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t+1, precomp_P) #currently only reacting on bottom bc
-        phip_diff -= phip[:,:,t+1]
-        try
-            eval_by_cell!((i,j,cell_particles)-> (if i==1;assign_f_phi_cell!(y_0_flux,phip_diff[:,cell_particles[bc_interact[cell_particles,t,2]]],psi_mesh,i,j,t)
-            ; end;return nothing) , x_pos[:,t+1], y_pos[:,t+1], space_cells)
-        catch
-            
-            rethrow()
-        end
 
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
+        eval_by_cell!(function (i,j,cell_p)
+            edge_mean[t] += sum(phip[1,cell_p[bc_interact[cell_p,t,2]],t+1]) / length(cell_p)
+            edge_squared[t] += sum(phip[1,cell_p[bc_interact[cell_p,t,2]],t+1].^2) / length(cell_p)
+            return nothing
+        end,  x_pos[:,t], y_pos[:,t], space_cells)
+
+        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,t+1, precomp_P) #currently only reacting on bottom bc
+
+        assign_f_phi!(f_phi,phip[:,:,t+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         # print(maximum(phip[:,:,t]),' ')
     end
     verbose && println("end")
@@ -1235,37 +1282,4 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
     return nothing
 end
 
-function make_f_phi_no_PSP_inflow_record_flux!(f_phi::Array{T,5},y_0_flux::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
-    np, nt = size(x_pos)
-    nt-=1
-    precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
-
-    phip = zeros(T, (2, np, nt+1)) #scalar concentration at these points
-
-    if initial_condition == "Uniform phi_1"
-        set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
-        set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
-        set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
-        set_phi_as_ic_dd!(phip,1)
-    else
-        throw(ArgumentError("Not a valid intitial condition"))
-    end
-    
-    for t in 1:nt
-        verbose && print(t,' ')
-        set_phi_as_ic_up1!(phip,t, bc_interact[:,t,3] .| bc_interact[:,t,4])#set incoming particles to same as ic
-        phip_diff = phip[:,:,t]
-        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t, precomp_P) #currently only reacting on bottom bc
-        phip_diff -= phip[:,:,t]
-        phip[:,:,t+1] = phip[:,:,t]
-        assign_f_phi!(f_phi,phip[:,:,t], x_pos[:,t], y_pos[:,t], psi_mesh, space_cells,t)
-        eval_by_cell!((i,j,cell_particles)-> (if i==1;assign_f_phi_cell!(y_0_flux,phip_diff[:,cell_particles],psi_mesh,i,j,t)
-        ; end;return nothing) , x_pos[:,t], y_pos[:,t], space_cells)
-    end
-    verbose && println("end")
-    return nothing
-end
 end
