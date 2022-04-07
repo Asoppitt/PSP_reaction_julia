@@ -20,7 +20,7 @@ float_type=Float32
 
 data_shape = zeros(Int,5)
 read!(data_folder*"array_shape",data_shape)
-# , [psi_partions_num, psi_partions_num, y_res, x_res, nt+1]
+#  [psi_partions_num, psi_partions_num, y_res, x_res, nt+1]
 nt = data_shape[5]
 psi_partions_num = data_shape[1]
 phi_domain = [0,1.01]

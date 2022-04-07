@@ -494,6 +494,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::
     return nothing
 end
 
+####Not being updated ####
 #using binomal noise for small numbers of vparticles
 function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int,false}, t_index::Int) where TF<:AbstractFloat
     n_abs = sum(abs_points)
@@ -525,6 +526,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     return nothing
 end
+####updates resume ####
 
 #mean
 function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,TF}, t_index::Int) where TF<:AbstractFloat 
