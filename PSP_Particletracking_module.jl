@@ -37,11 +37,12 @@ struct MotionParams{T<:AbstractFloat}
     u_mean::T
 end
 
-struct BCParams{T<:AbstractFloat, Tvp<:Real, bc_CLT}
+struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function}, bc_CLT}
     bc_k::T
     C_0::T
     B::T
     num_vp::Tvp
+    corr_factor::T_corr
 end
 
 function cell_grid(x_res ::Int,y_res ::Int,length_domain ::T,height_domain ::T) where T<:AbstractFloat #constructor for CellGrid
@@ -66,22 +67,48 @@ end
 
 function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:Int
     if B_format == "Decay"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp)
+        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,nothing)
     elseif B_format == "Constant"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp)
+        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,nothing)
     end
 end
 
 function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:AbstractFloat
     num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
     if B_format == "Decay"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp)
+        return BCParams{T,Tvp,Nothing, bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,nothing)
     elseif B_format == "Constant"
-        return BCParams{T,Tvp,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp)
+        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp,nothing)
+    end
+end
+
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function}
+    if B_format == "Decay"
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func)
+    elseif B_format == "Constant"
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,corr_func)
+    end
+end
+
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
+    if B_format == "Decay"
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,corr_func)
+    elseif B_format == "Constant"
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp,corr_func)
     end
 end
 
 function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool) where T<:AbstractFloat
+    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
+end
+
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Function
+    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
+end
+
+
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Nothing
     return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
 end
 
@@ -274,6 +301,18 @@ function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:Abstra
     # phi_array[2,.!delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
     return nothing
 end
+function set_phi_as_ic_norm1!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "Uniform phi1"
+    nparticles = size(phi_array)[2]
+    phi_array[2,:,t_index] = abs.(phi_eps*randn(TF, nparticles)) #pdf can't find zeros
+    phi_array[1,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
+    reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    while any(reject) #trucation via rejection sampling
+        phi_array[1,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
+        reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    end
+    return nothing
+end
 
 function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractArray{TF,2}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
     "use if cell_points has alreday been determined"
@@ -461,7 +500,7 @@ function eval_by_cell!(func!::Function, xp::Vector{TF}, yp::Vector{TF}, space_ce
 end 
 
 #CLt/normal
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int,true}, t_index::Int) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(TF, 2,n_abs)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
@@ -479,7 +518,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #CLt/normal Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
@@ -496,7 +535,7 @@ end
 
 ####Not being updated ####
 #using binomal noise for small numbers of vparticles
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int,false}, t_index::Int) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(TF,2,n_abs)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
@@ -513,7 +552,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #binomal precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
@@ -529,7 +568,7 @@ end
 ####updates resume ####
 
 #mean
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,TF}, t_index::Int) where TF<:AbstractFloat 
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,TF, Nothing}, t_index::Int) where TF<:AbstractFloat 
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(2,n_abs)
     #K for Erban and Chapman approximation 
@@ -542,12 +581,47 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #mean Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF, Nothing}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
     #K for Erban and Chapman approximation 
     ratios = 1 - Precomp_P #taking mean for limiting case
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
     return nothing
 end
+
+###add in non-liner sorbtion as a correction factor from linear
+
+#CLt/normal Precomp
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int,func_T,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
+    n_abs = sum(abs_points)
+    effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
+    #K for Erban and Chapman approximation 
+    P = zeros(TF, 2,n_abs)
+    phi_vec = [phip[:,abs_points,t_index][:,i] for i=1:n_abs]
+    corr_vec = bc_params.corr_factor.(phi_vec)
+    corr_arr = [corr_vec[j][i] for i=1:2, j=1:n_abs]
+    P .= Precomp_P.*corr_arr
+    #by CLT approx dist for number of virtual particles to have reacted
+    xi = randn(TF, 2,n_abs).*sqrt.((P.*(1 .-P)))
+    #catching places where all mass has been removed
+    xi = [effective_v_particles[i,j]>0 ? xi[i,j]./sqrt(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
+    ratios = max.(min.((1 .-P) + xi,1),0)
+    phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    return nothing
+end
+
+#mean Precomp
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF,func_T}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
+    #K for Erban and Chapman approximation 
+    n_abs=sum(abs_points)
+    phi_vec = [phip[:,abs_points,t_index][:,i] for i=1:n_abs]
+    corr_vec = bc_params.corr_factor.(phi_vec)
+    corr_arr = [corr_vec[j][i] for i=1:2, j=1:n_abs]
+    ratios = 1 .- Precomp_P.*corr_arr #taking mean for limiting case
+    phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    return nothing
+end
+
+###
 
 function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, m_params::MotionParams{T}, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
     omega_bar=m_params.omega_bar
@@ -1092,7 +1166,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     return nothing
 end
 
-#TODO:make other PSP functions match the changes here
+#TODO:make other PSP have same ics
 function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
@@ -1115,6 +1189,8 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
     elseif initial_condition == "double delta"
         set_phi_as_ic_dd!(phip,1)
+    elseif initial_condition == "centred normal"
+        set_phi_as_ic_norm1!(phip,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
