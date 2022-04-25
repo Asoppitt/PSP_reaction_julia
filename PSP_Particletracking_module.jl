@@ -1,6 +1,6 @@
 module PSPParticleTrackingReactions
 
-using Random, Distributions
+using Random, Distributions#, Plots
 import StatsBase as sb
 import LinearAlgebra as la
 import Statistics as st
@@ -28,6 +28,7 @@ struct PSPParams{T<:AbstractFloat}
     T_omega::T
     c_phi::T
     c_t::T
+    reaction_form :: Tuple{Function, Function}
 end
 
 struct MotionParams{T<:AbstractFloat}
@@ -37,7 +38,7 @@ struct MotionParams{T<:AbstractFloat}
     u_mean::T
 end
 
-struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function}, bc_CLT}
+struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function, Tuple{Function,Function}}, bc_CLT}
     bc_k::T
     C_0::T
     B::T
@@ -53,8 +54,8 @@ function psi_grid(psi_partions_num ::Int, phi_domain ::AbstractVector{T}) where 
     return PsiGrid(psi_partions_num, phi_domain,LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1),LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1))
 end
 
-function PSP_params(omega_bar::T, omega_sigma_2::T, c_phi::T, c_t::T) where T<:AbstractFloat
-    return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, c_phi, c_t)
+function PSP_params(omega_bar::T, omega_sigma_2::T, c_phi::T, c_t::T, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat
+    return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, c_phi, c_t, react_func)
 end
 
 function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
@@ -65,24 +66,7 @@ function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:Int
-    if B_format == "Decay"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,nothing)
-    elseif B_format == "Constant"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,nothing)
-    end
-end
-
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:AbstractFloat
-    num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
-    if B_format == "Decay"
-        return BCParams{T,Tvp,Nothing, bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,nothing)
-    elseif B_format == "Constant"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp,nothing)
-    end
-end
-
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function, Tuple{Function,Function}}
     if B_format == "Decay"
         return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func)
     elseif B_format == "Constant"
@@ -90,7 +74,7 @@ function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool,
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
     num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
     if B_format == "Decay"
         return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,corr_func)
@@ -99,17 +83,8 @@ function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool,
     end
 end
 
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool) where T<:AbstractFloat
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
-end
-
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Function
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
-end
-
-
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Nothing
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
 end
 
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles::Vector{Int}, cell_points::Vector{Int}) where T<:AbstractFloat
@@ -284,7 +259,7 @@ function set_phi_as_ic_2l!(phi_array::Array{TF,3},yp::Vector{TF},space_cells::Ce
     phi_array[1,yp.>0.5*space_cells.height_domain,t_index] .= 1
 
     phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
-    # phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
+    phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
     return nothing
 end
 function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:AbstractFloat
@@ -305,6 +280,24 @@ function set_phi_as_ic_norm1!(phi_array::Array{TF,3}, t_index::Int) where TF<:Ab
     #Initial_condition == "Uniform phi1"
     nparticles = size(phi_array)[2]
     phi_array[2,:,t_index] = abs.(phi_eps*randn(TF, nparticles)) #pdf can't find zeros
+    phi_array[1,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
+    reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    while any(reject) #trucation via rejection sampling
+        phi_array[1,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
+        reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    end
+    return nothing
+end
+
+function set_phi_as_ic_normboth!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "Uniform phi1"
+    nparticles = size(phi_array)[2]
+    phi_array[2,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
+    reject=(phi_array[2,:,t_index].<=0) .| (phi_array[2,:,t_index].>1)
+    while any(reject) #trucation via rejection sampling
+        phi_array[2,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
+        reject=(phi_array[2,:,t_index].<=0) .| (phi_array[2,:,t_index].>1)
+    end
     phi_array[1,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
     reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
     while any(reject) #trucation via rejection sampling
@@ -1191,6 +1184,8 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         set_phi_as_ic_dd!(phip,1)
     elseif initial_condition == "centred normal"
         set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
@@ -1211,6 +1206,9 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     function test_dot(particle)#used to check if bounding condition is fulfilled
         la.dot((phip[:,phi_pm[1,particle],1]-phip[:,particle,1]),(phip[:,phi_pm[2,particle],1]-phip[:,particle,1]))
     end
+
+    mean_phi = zeros(T,2,nt+1)
+    mean_phi[:,1] = mean(phip[:,:,1],dims=2)[:,1]
 
     for t in 1:nt
         verbose && print(t,' ')
@@ -1253,9 +1251,7 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         diffusion = zeros(T, 2,np)
         diffusion[1,:] = (phip[1,:,1]-phi_c[1,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
         diffusion[2,:] = (phip[2,:,1]-phi_c[2,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
-        reaction = zeros(T, 2,np) # body reaction
-        # reaction = dt.*(reaction).*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
-        dphi = (diffusion .+ reaction)
+        dphi = diffusion
         #the local diffusion for each particle
         gamma[1,:] = c_phi.*0.5.*omegap[:,t].*(phip[1,:,1]-phi_c[1,:])
         gamma[2,:] = c_phi.*0.5.*omegap[:,t].*(phip[2,:,1]-phi_c[2,:])
@@ -1295,7 +1291,14 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
 
         dphi = corr_factor.*dphi
         dphi = T_mat*dphi #return to old coords
+
+        #reaction has to be done after mean zero correction - or it has no effect
+        reaction = zeros(T, 2,np) # body reaction
+        reaction[1,:] = dt.*(p_params.reaction_form[1].(phip[1,:,1],phip[2,:,1]))#.*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
+        reaction[2,:] = dt.*(p_params.reaction_form[2].(phip[1,:,1],phip[2,:,1]))
+        dphi .+= reaction
         phip[:,:,1+1] = phip[:,:,1]+dphi
+        mean_phi[:,t+1] = mean(phip[:,:,2],dims=2)[:,1]
         if !(initial_condition == "triple delta")
             phip[:,:,1+1] = phip[:,:,1+1].*(phip[:,:,1+1].>0) #forcing positive concentration
         end
@@ -1311,6 +1314,8 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         phip[:,:,1] = phip[:,:,2]
         # print(maximum(phip[:,:,t]),' ')
     end
+    # plt=plot(permutedims( mean_phi))
+    # display(plt)
     verbose && println("end")
     return nothing
 end
