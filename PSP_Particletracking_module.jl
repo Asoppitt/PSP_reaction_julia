@@ -273,7 +273,7 @@ function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:Abstra
     phi_array[1,delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==1].*0.05
 
     phi_array[1,.!delta_selector,t_index] = abs.(phi_eps*noise_term[.!delta_selector] )
-    # phi_array[2,.!delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
+    phi_array[2,.!delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
     return nothing
 end
 function set_phi_as_ic_norm1!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
