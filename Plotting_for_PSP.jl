@@ -1,7 +1,7 @@
 using Plots; GR.init()#plotlyjs()
 import Statistics as st
 
-data_folder= "Data/default/F32/"
+data_folder=  "Data/paper/toy_prob_9/with_phi_gamma/F32/"#"Data/default/F32/"
 
 image_path=["plots"]
 
@@ -19,8 +19,9 @@ end
 float_type=Float32
 
 data_shape = zeros(Int,5)
-read!(data_folder*"array_shape",data_shape)
+# read!(data_folder*"array_shape",data_shape)
 #  [psi_partions_num, psi_partions_num, y_res, x_res, nt+1]
+data_shape = [50,50,5,15,114]
 nt = data_shape[5]
 psi_partions_num = data_shape[1]
 phi_domain = [0,1.01]
@@ -42,7 +43,8 @@ B=(1.5*C_0)
 bc_k=0.25
 D=2*C_0*k/((B^2)*omega_mean)
 do_flux = false
-read!(data_folder*"data",in_data)
+# read!(data_folder*"data",in_data)
+read!(data_folder*"Inf_vp_CLT_w50.0",in_data)
 t_space = LinRange(0,nt*dt,nt+1)
 x_space = LinRange(0,length_domain,x_res)
 y_space = LinRange(0,height_domain,y_res)

@@ -307,6 +307,34 @@ function set_phi_as_ic_normboth!(phi_array::Array{TF,3}, t_index::Int) where TF<
     return nothing
 end
 
+function set_phi_as_ic_dd_diff!(phi_array::Array{TF,3}, K::TF, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "double delta difference" with constant K
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    local delta_selector = rand([true,false], nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    phi_array[2,delta_selector,t_index] .= sqrt(K)#.+(phi_eps*noise_term[delta_selector] )
+    phi_array[1,delta_selector,t_index] .= sqrt(K)#.-(phi_eps*noise_term[delta_selector] )
+
+    phi_array[1,.!delta_selector,t_index] .= 1 #.-(phi_eps*noise_term[.!delta_selector] )
+    phi_array[2,.!delta_selector,t_index] .= K #.+(phi_eps*noise_term[.!delta_selector] )
+    return nothing
+end
+function set_phi_as_ic_2l_diff!(phi_array::Array{TF,3},K::TF,yp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "2 layers difference"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    phi_array[2,yp.>0.5*space_cells.height_domain,t_index] .= sqrt(K) #.+abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+    phi_array[1,yp.>0.5*space_cells.height_domain,t_index] .= sqrt(K)#.-abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+
+    phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.- abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+    phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= K #.+ abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+    return nothing
+end
+
 function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractArray{TF,2}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
     "use if cell_points has alreday been determined"
     phi_array_sort_ind_1 = sortperm(phi_array[1,:])
@@ -1160,7 +1188,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 end
 
 #TODO:make other PSP have same ics
-function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg{T}}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1174,18 +1202,23 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
     gamma = zeros(T, (2, np))
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
-    elseif initial_condition == "centred normal"
+    elseif initial_condition[1] == "centred normal"
         set_phi_as_ic_norm1!(phip,1)
-    elseif initial_condition == "centred 2 normal"
+    elseif initial_condition[1] == "centred 2 normal"
         set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
