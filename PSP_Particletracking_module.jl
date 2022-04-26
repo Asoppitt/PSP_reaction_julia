@@ -1497,20 +1497,29 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
     return nothing
 end
 
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     
     phip = zeros(T, (2, np, nt+1)) #scalar concentration at these points
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
+    elseif initial_condition[1] == "centred normal"
+        set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition[1] == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
@@ -1527,21 +1536,30 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
 end
 
 #constant turb_k_e
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
 
     phip = zeros(T, (2, np, nt+1)) #scalar concentration at these points
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
+    elseif initial_condition[1] == "centred normal"
+        set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition[1] == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
