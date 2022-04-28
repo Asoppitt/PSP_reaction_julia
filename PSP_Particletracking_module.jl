@@ -1,6 +1,6 @@
 module PSPParticleTrackingReactions
 
-using Random, Distributions
+using Random, Distributions#, Plots
 import StatsBase as sb
 import LinearAlgebra as la
 import Statistics as st
@@ -28,6 +28,7 @@ struct PSPParams{T<:AbstractFloat}
     T_omega::T
     c_phi::T
     c_t::T
+    reaction_form :: Tuple{Function, Function}
 end
 
 struct MotionParams{T<:AbstractFloat}
@@ -37,7 +38,7 @@ struct MotionParams{T<:AbstractFloat}
     u_mean::T
 end
 
-struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function}, bc_CLT}
+struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function, Tuple{Function,Function}}, bc_CLT}
     bc_k::T
     C_0::T
     B::T
@@ -53,8 +54,8 @@ function psi_grid(psi_partions_num ::Int, phi_domain ::AbstractVector{T}) where 
     return PsiGrid(psi_partions_num, phi_domain,LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1),LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1))
 end
 
-function PSP_params(omega_bar::T, omega_sigma_2::T, c_phi::T, c_t::T) where T<:AbstractFloat
-    return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, c_phi, c_t)
+function PSP_params(omega_bar::T, omega_sigma_2::T, c_phi::T, c_t::T, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat
+    return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, c_phi, c_t, react_func)
 end
 
 function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
@@ -65,24 +66,7 @@ function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:Int
-    if B_format == "Decay"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,nothing)
-    elseif B_format == "Constant"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,nothing)
-    end
-end
-
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool) where T<:AbstractFloat where Tvp<:AbstractFloat
-    num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
-    if B_format == "Decay"
-        return BCParams{T,Tvp,Nothing, bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,nothing)
-    elseif B_format == "Constant"
-        return BCParams{T,Tvp,Nothing,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp,nothing)
-    end
-end
-
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function, Tuple{Function,Function}}
     if B_format == "Decay"
         return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func)
     elseif B_format == "Constant"
@@ -90,7 +74,7 @@ function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool,
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
     num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
     if B_format == "Decay"
         return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,corr_func)
@@ -99,17 +83,8 @@ function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool,
     end
 end
 
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool) where T<:AbstractFloat
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
-end
-
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Function
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
-end
-
-
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr) where T<:AbstractFloat where T_corr<:Nothing
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT)
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
 end
 
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles::Vector{Int}, cell_points::Vector{Int}) where T<:AbstractFloat
@@ -284,7 +259,7 @@ function set_phi_as_ic_2l!(phi_array::Array{TF,3},yp::Vector{TF},space_cells::Ce
     phi_array[1,yp.>0.5*space_cells.height_domain,t_index] .= 1
 
     phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
-    # phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
+    phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
     return nothing
 end
 function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:AbstractFloat
@@ -298,7 +273,7 @@ function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:Abstra
     phi_array[1,delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==1].*0.05
 
     phi_array[1,.!delta_selector,t_index] = abs.(phi_eps*noise_term[.!delta_selector] )
-    # phi_array[2,.!delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
+    phi_array[2,.!delta_selector,t_index] .= 1 #.+ uniform_noise[delta_selector.==2].*0.05
     return nothing
 end
 function set_phi_as_ic_norm1!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
@@ -311,6 +286,52 @@ function set_phi_as_ic_norm1!(phi_array::Array{TF,3}, t_index::Int) where TF<:Ab
         phi_array[1,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
         reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
     end
+    return nothing
+end
+
+function set_phi_as_ic_normboth!(phi_array::Array{TF,3}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "Uniform phi1"
+    nparticles = size(phi_array)[2]
+    phi_array[2,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
+    reject=(phi_array[2,:,t_index].<=0) .| (phi_array[2,:,t_index].>1)
+    while any(reject) #trucation via rejection sampling
+        phi_array[2,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
+        reject=(phi_array[2,:,t_index].<=0) .| (phi_array[2,:,t_index].>1)
+    end
+    phi_array[1,:,t_index] = randn(TF, nparticles)*0.5*(1/3).+0.5 #high amount of mass already in system, truncation shouldn't cause problems
+    reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    while any(reject) #trucation via rejection sampling
+        phi_array[1,reject,t_index] = randn(TF, sum(reject))*0.5*(1/3) .+0.5
+        reject=(phi_array[1,:,t_index].<=0) .| (phi_array[1,:,t_index].>1)
+    end
+    return nothing
+end
+
+function set_phi_as_ic_dd_diff!(phi_array::Array{TF,3}, K::TF, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "double delta difference" with constant K
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    local delta_selector = rand([true,false], nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    phi_array[2,delta_selector,t_index] .= sqrt(K)#.+(phi_eps*noise_term[delta_selector] )
+    phi_array[1,delta_selector,t_index] .= sqrt(K)#.-(phi_eps*noise_term[delta_selector] )
+
+    phi_array[1,.!delta_selector,t_index] .= 1 #.-(phi_eps*noise_term[.!delta_selector] )
+    phi_array[2,.!delta_selector,t_index] .= K #.+(phi_eps*noise_term[.!delta_selector] )
+    return nothing
+end
+function set_phi_as_ic_2l_diff!(phi_array::Array{TF,3},K::TF,yp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "2 layers difference"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    phi_array[2,yp.>0.5*space_cells.height_domain,t_index] .= sqrt(K) #.+abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+    phi_array[1,yp.>0.5*space_cells.height_domain,t_index] .= sqrt(K)#.-abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+
+    phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.- abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+    phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= K #.+ abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
     return nothing
 end
 
@@ -698,7 +719,6 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     return bc_interact
 end
 
-#there's a burn in here now
 function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, m_params::MotionParams{T}, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
     #for constant kinetic energy
     omega_bar=m_params.omega_bar
@@ -711,60 +731,6 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
-    # burn_in=0
-
-    # #ensures the velocities have the correct distribution 
-    # for t=1:burn_in
-    #     uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
-    #     uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
-    #     uxp_full = u_mean .+ uxp
-    #     x_pos[:,t+1] = x_pos[:,t] + (uxp_full)*dt # random walk in x-direction
-    #     y_pos[:,t+1] = y_pos[:,t] + uyp*dt # random walk in y-direction
-
-    #         # Reflection particles at boundaries
-
-    #     # Reflection at upper boundary y>height_domain
-    #     # doing closed on top open on bottom, as cell detection is open on top,
-    #     # closed on bottom
-    #     mag = findall(y_pos[:,t+1].>=space_cells.height_domain) # index of particle with yp>height_domain
-    #     dim_mag = size(mag) # dimension of array "mag"
-
-    #     y_mag_succ = y_pos[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    #     V1 = space_cells.height_domain.*ones(T, dim_mag) 
-
-    #     ypr_mag = V1*2 .- y_mag_succ  # yp at time t+1 of the reflected particle
-
-    #     y_pos[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
-    #     uyp[mag] = -uyp[mag] #reflecting velocity
-
-    #     # Reflection at lower boundary y<0
-    #     mag = findall(y_pos[:,t+1].<=0) # index of particle with yp>height_domain
-    #     dim_mag = size(mag) # dimension of array "mag"
-
-    #     y_mag_succ = y_pos[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    #     ypr_mag = - y_mag_succ  # yp at time t+1 of the reflected particle
-
-    #     y_pos[mag,t+1]= ypr_mag #replacement of yp<0 with yp of reflected particle
-    #     uyp[mag] = -uyp[mag] #reflecting velocity
-
-    #     #bc at end (y=length_domain) of domain
-    #     end_indicies = x_pos[:,t+1].>=space_cells.length_domain #index of particle with xp>length
-
-    #     end_x = x_pos[end_indicies,t+1]
-    #     xpr_end = end_x .- space_cells.length_domain #shifting particles back to begining
-    #     x_pos[end_indicies,t+1] = xpr_end #replacing x coords
-
-
-    #     #bc at start (x=0) of domain
-    #     start_indicies = x_pos[:,t+1].<=0 #index of particle with xp>length
-
-    #     xpr_start = space_cells.length_domain .+ x_pos[start_indicies,t+1] 
-    #     x_pos[start_indicies,t+1] = xpr_start #replacing x coords
-    # end
-    # x_pos[:,1]=x_pos[:,burn_in]
-    # y_pos[:,1]=y_pos[:,burn_in]
     for t=1:nt
         uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
         uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
@@ -1167,7 +1133,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 end
 
 #TODO:make other PSP have same ics
-function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg{T}}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1181,16 +1147,23 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
     gamma = zeros(T, (2, np))
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
-    elseif initial_condition == "centred normal"
+    elseif initial_condition[1] == "centred normal"
         set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition[1] == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
@@ -1211,6 +1184,9 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     function test_dot(particle)#used to check if bounding condition is fulfilled
         la.dot((phip[:,phi_pm[1,particle],1]-phip[:,particle,1]),(phip[:,phi_pm[2,particle],1]-phip[:,particle,1]))
     end
+
+    mean_phi = zeros(T,2,nt+1)
+    mean_phi[:,1] = mean(phip[:,:,1],dims=2)[:,1]
 
     for t in 1:nt
         verbose && print(t,' ')
@@ -1253,9 +1229,7 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         diffusion = zeros(T, 2,np)
         diffusion[1,:] = (phip[1,:,1]-phi_c[1,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
         diffusion[2,:] = (phip[2,:,1]-phi_c[2,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
-        reaction = zeros(T, 2,np) # body reaction
-        # reaction = dt.*(reaction).*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
-        dphi = (diffusion .+ reaction)
+        dphi = diffusion
         #the local diffusion for each particle
         gamma[1,:] = c_phi.*0.5.*omegap[:,t].*(phip[1,:,1]-phi_c[1,:])
         gamma[2,:] = c_phi.*0.5.*omegap[:,t].*(phip[2,:,1]-phi_c[2,:])
@@ -1295,7 +1269,14 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
 
         dphi = corr_factor.*dphi
         dphi = T_mat*dphi #return to old coords
+
+        #reaction has to be done after mean zero correction - or it has no effect
+        reaction = zeros(T, 2,np) # body reaction
+        reaction[1,:] = dt.*(p_params.reaction_form[1].(phip[1,:,1],phip[2,:,1]))#.*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
+        reaction[2,:] = dt.*(p_params.reaction_form[2].(phip[1,:,1],phip[2,:,1]))
+        dphi .+= reaction
         phip[:,:,1+1] = phip[:,:,1]+dphi
+        mean_phi[:,t+1] = mean(phip[:,:,2],dims=2)[:,1]
         if !(initial_condition == "triple delta")
             phip[:,:,1+1] = phip[:,:,1+1].*(phip[:,:,1+1].>0) #forcing positive concentration
         end
@@ -1311,6 +1292,8 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         phip[:,:,1] = phip[:,:,2]
         # print(maximum(phip[:,:,t]),' ')
     end
+    # plt=plot(permutedims( mean_phi))
+    # display(plt)
     verbose && println("end")
     return nothing
 end
@@ -1459,20 +1442,29 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
     return nothing
 end
 
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     
     phip = zeros(T, (2, np, nt+1)) #scalar concentration at these points
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
+    elseif initial_condition[1] == "centred normal"
+        set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition[1] == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
@@ -1489,21 +1481,30 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
 end
 
 #constant turb_k_e
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::String, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
 
     phip = zeros(T, (2, np, nt+1)) #scalar concentration at these points
 
-    if initial_condition == "Uniform phi_1"
+    isa(initial_condition, String) && (initial_condition=(initial_condition,))
+    if initial_condition[1] == "Uniform phi_1"
         set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
+    elseif initial_condition[1] == "triple delta"
         set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
+    elseif initial_condition[1] == "2 layers"
         set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
+    elseif initial_condition[1] == "double delta"
         set_phi_as_ic_dd!(phip,1)
+    elseif initial_condition[1] == "centred normal"
+        set_phi_as_ic_norm1!(phip,1)
+    elseif initial_condition[1] == "centred 2 normal"
+        set_phi_as_ic_normboth!(phip,1)
+    elseif initial_condition[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
+    elseif initial_condition[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
