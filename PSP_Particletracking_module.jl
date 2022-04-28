@@ -719,7 +719,6 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     return bc_interact
 end
 
-#there's a burn in here now
 function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, m_params::MotionParams{T}, dt::T, space_cells::CellGrid{T}) where T<:AbstractFloat
     #for constant kinetic energy
     omega_bar=m_params.omega_bar
@@ -732,60 +731,6 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
-    # burn_in=0
-
-    # #ensures the velocities have the correct distribution 
-    # for t=1:burn_in
-    #     uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
-    #     uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
-    #     uxp_full = u_mean .+ uxp
-    #     x_pos[:,t+1] = x_pos[:,t] + (uxp_full)*dt # random walk in x-direction
-    #     y_pos[:,t+1] = y_pos[:,t] + uyp*dt # random walk in y-direction
-
-    #         # Reflection particles at boundaries
-
-    #     # Reflection at upper boundary y>height_domain
-    #     # doing closed on top open on bottom, as cell detection is open on top,
-    #     # closed on bottom
-    #     mag = findall(y_pos[:,t+1].>=space_cells.height_domain) # index of particle with yp>height_domain
-    #     dim_mag = size(mag) # dimension of array "mag"
-
-    #     y_mag_succ = y_pos[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    #     V1 = space_cells.height_domain.*ones(T, dim_mag) 
-
-    #     ypr_mag = V1*2 .- y_mag_succ  # yp at time t+1 of the reflected particle
-
-    #     y_pos[mag,t+1]= ypr_mag #replacement of yp>1 with yp of reflected particle
-    #     uyp[mag] = -uyp[mag] #reflecting velocity
-
-    #     # Reflection at lower boundary y<0
-    #     mag = findall(y_pos[:,t+1].<=0) # index of particle with yp>height_domain
-    #     dim_mag = size(mag) # dimension of array "mag"
-
-    #     y_mag_succ = y_pos[mag,t+1] # yp at time t+1 corresponding to the index "mag"
-
-    #     ypr_mag = - y_mag_succ  # yp at time t+1 of the reflected particle
-
-    #     y_pos[mag,t+1]= ypr_mag #replacement of yp<0 with yp of reflected particle
-    #     uyp[mag] = -uyp[mag] #reflecting velocity
-
-    #     #bc at end (y=length_domain) of domain
-    #     end_indicies = x_pos[:,t+1].>=space_cells.length_domain #index of particle with xp>length
-
-    #     end_x = x_pos[end_indicies,t+1]
-    #     xpr_end = end_x .- space_cells.length_domain #shifting particles back to begining
-    #     x_pos[end_indicies,t+1] = xpr_end #replacing x coords
-
-
-    #     #bc at start (x=0) of domain
-    #     start_indicies = x_pos[:,t+1].<=0 #index of particle with xp>length
-
-    #     xpr_start = space_cells.length_domain .+ x_pos[start_indicies,t+1] 
-    #     x_pos[start_indicies,t+1] = xpr_start #replacing x coords
-    # end
-    # x_pos[:,1]=x_pos[:,burn_in]
-    # y_pos[:,1]=y_pos[:,burn_in]
     for t=1:nt
         uxp = uxp+(-0.5*B*omega_bar*uxp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
         uyp = uyp+(-0.5*B*omega_bar*uyp)*dt+randn(T, np).*sqrt.(C_0.*turb_k_e.*omega_bar.*dt); 
