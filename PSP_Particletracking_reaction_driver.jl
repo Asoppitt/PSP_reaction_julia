@@ -35,20 +35,23 @@ np = x_res*y_res*1000 # number of particles
 psi_partions_num = 50
 psi_domain = [float_type(0.0),float_type(1.01)]
 #controls for omega distribution
-omega_bar = float_type(10.0)
-omega_sigma_2 = float_type(0.25)
+omega_bar = float_type(10.0) #mean turb freq
+omega_sigma_2 = float_type(0.25) #variance of turb freq
 omega_min = float_type(9.00) # minimum value for omega - acts as a shift on gamma distribution. scales as O(1/λ_max^2) where λ_max is the maximum lengthscale 
-
-C_0 = float_type(2.1)
+#mixing paramters
 B_format = "Constant"
-c_phi = float_type(25.0)
-c_t = float_type(2.0)
-u_mean = float_type(0.1)
-turb_k_e= float_type(1.938)
+c_phi = float_type(25.0)#streangth of mixing
+c_t = float_type(2.0)#repairing timescale parameter
+#velocity mean and variance
+u_mean = float_type(0.1) #velocity mean
+turb_k_e= float_type(1.938) #turbulent kinetic energy = 3/2 Var(u)
+C_0 = float_type(2.1) # ~Kolmogorov constant - a rate for velocity change
 #strength of boundary reaction
 bc_k = float_type(0.3)
+#parmeters for random bc
 num_vp = float_type(Inf)
 bc_CLT = true
+
 PSP_on = true
 #intial condtion one of:
 #"Uniform phi_1","triple delta","2 layers","double delta","centred normal","centred 2 normal",
