@@ -1,7 +1,7 @@
 using Plots; GR.init()#plotlyjs()
 import Statistics as st
 
-data_folder=  "Data/paper/toy_prob_9/with_phi_gamma/F32/"#"Data/default/F32/"
+data_folder=  "Data/default/F32/"
 
 image_path=["plots"]
 
@@ -19,9 +19,9 @@ end
 float_type=Float32
 
 data_shape = zeros(Int,5)
-# read!(data_folder*"array_shape",data_shape)
+read!(data_folder*"array_shape",data_shape)
 #  [psi_partions_num, psi_partions_num, y_res, x_res, nt+1]
-data_shape = [50,50,5,15,114]
+# data_shape = [50,50,5,15,114]
 nt = data_shape[5]
 psi_partions_num = data_shape[1]
 phi_domain = [0,1.01]
@@ -43,8 +43,7 @@ B=(1.5*C_0)
 bc_k=0.25
 D=2*C_0*k/((B^2)*omega_mean)
 do_flux = false
-# read!(data_folder*"data",in_data)
-read!(data_folder*"Inf_vp_CLT_w50.0",in_data)
+read!(data_folder*"data",in_data)
 t_space = LinRange(0,nt*dt,nt+1)
 x_space = LinRange(0,length_domain,x_res)
 y_space = LinRange(0,height_domain,y_res)
@@ -65,6 +64,7 @@ integral_mean_1 = sum(phi_1_means,dims=[1,2])[1,1,:].* 1/(y_res*x_res)
 plt1=plot()
 plt2=plot()
 plt3=plot()
+plt4=plot()
 
 plot!(plt1,t_space,integral_mean_1,
 title="Evolution of mean concentration over time",
@@ -93,6 +93,17 @@ colorbartitle="concentration",
 fill=true,
 line=false)
 
+heatmap!(plt4,x_space[:],y_space,phi_1_means[:,:,end],#change the final index in phi_1_means to choose time plotted
+levels=200, 
+# color= colormap("RdBu", logscale=true),
+title="Evolution of mean concentration vs space at the final",
+ylabel="y",
+xlabel="x",
+colorbartitle="concentration",
+fill=true,
+line=false)
+
 savefig(plt1,image_folder*"mean_over_time")
 savefig(plt2,image_folder*"pdf_over_time")
 savefig(plt3,image_folder*"mean_y_over_time")
+savefig(plt4,image_folder*"final_time_concentarions")

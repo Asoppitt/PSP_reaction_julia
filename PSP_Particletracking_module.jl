@@ -25,6 +25,7 @@ end
 struct PSPParams{T<:AbstractFloat}
     omega_bar::T
     omega_sigma_2::T
+    omega_min::T
     T_omega::T
     c_phi::T
     c_t::T
@@ -54,8 +55,9 @@ function psi_grid(psi_partions_num ::Int, phi_domain ::AbstractVector{T}) where 
     return PsiGrid(psi_partions_num, phi_domain,LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1),LinRange(phi_domain[1], phi_domain[2], psi_partions_num+1))
 end
 
-function PSP_params(omega_bar::T, omega_sigma_2::T, c_phi::T, c_t::T, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat
-    return PSPParams(omega_bar, omega_sigma_2, 1/omega_bar, c_phi, c_t, react_func)
+function PSP_params(omega_bar::T, omega_sigma_2::T,omega_min::T, c_phi::T, c_t::T, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat
+    (omega_bar <= omega_min) && throw(DomainError(omega_min,"omega_min must be less than omega_bar"))
+    return PSPParams(omega_bar, omega_sigma_2, omega_min, 1/omega_bar, c_phi, c_t, react_func)
 end
 
 function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T<:AbstractFloat
@@ -83,8 +85,8 @@ function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool,
     end
 end
 
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
-    return PSP_params(omega_bar, omega_sigma_2, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T,omega_min::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    return PSP_params(omega_bar, omega_sigma_2,omega_min, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
 end
 
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles::Vector{Int}, cell_points::Vector{Int}) where T<:AbstractFloat
@@ -262,6 +264,27 @@ function set_phi_as_ic_2l!(phi_array::Array{TF,3},yp::Vector{TF},space_cells::Ce
     phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= 1 #.+ uniform_noise[yp[particles,1].<=0.5*height_domain].*0.05
     return nothing
 end
+function set_phi_as_ic_2l_one_empty!(phi_array::Array{TF,3},empty_layer::Integer,yp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "1 layer scalar, 1 layer empty"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    if empty_layer==0
+        phi_array[2,yp.>0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+        phi_array[1,yp.>0.5*space_cells.height_domain,t_index] .= 1
+
+        phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+        phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+    elseif empty_layer==1
+        phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
+        phi_array[1,yp.<=0.5*space_cells.height_domain,t_index] .= 1
+
+        phi_array[1,yp.>0.5*space_cells.height_domain,t_index] = abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+        phi_array[2,yp.>0.5*space_cells.height_domain,t_index] .= abs.(phi_eps*noise_term[yp.>0.5*space_cells.height_domain] )
+    end
+    return nothing
+end
 function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:AbstractFloat
     #Initial_condition == "double delta"
     nparticles = size(phi_array)[2]
@@ -334,6 +357,54 @@ function set_phi_as_ic_2l_diff!(phi_array::Array{TF,3},K::TF,yp::Vector{TF},spac
     phi_array[2,yp.<=0.5*space_cells.height_domain,t_index] .= K #.+ abs.(phi_eps*noise_term[yp.<=0.5*space_cells.height_domain] )
     return nothing
 end
+
+#a generic function to contain the switch case between ics
+function set_phi_as_ic!(phi_array::Array{TF,3},IC_type::String,xp::Vector{TF},yp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    if IC_type == "Uniform phi_1"
+        set_phi_as_ic_up1!(phi_array,t_index)
+    elseif IC_type == "triple delta"
+        set_phi_as_ic_td!(phi_array,t_index)
+    elseif IC_type == "2 layers"
+        set_phi_as_ic_2l!(phi_array,yp,space_cells,t_index)
+    elseif IC_type == "double delta"
+        set_phi_as_ic_dd!(phi_array,t_index)
+    elseif IC_type == "centred normal"
+        set_phi_as_ic_norm1!(phi_array,t_index)
+    elseif IC_type == "centred 2 normal"
+        set_phi_as_ic_normboth!(phi_array,t_index)
+    elseif IC_type in ["double delta difference","2 layers difference","1 layer transport, 1 layer empty"]
+        throw(ArgumentError("Requires addtional parameters"))
+    else
+        throw(ArgumentError("Not a valid intitial condition"))
+    end
+    return nothing
+end
+
+function set_phi_as_ic!(phi_array::Array{TF,3},IC_type::Tuple{String,Vararg},xp::Vector{TF},yp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    if IC_type == "Uniform phi_1"
+        set_phi_as_ic_up1!(phi_array,t_index)
+    elseif IC_type == "triple delta"
+        set_phi_as_ic_td!(phi_array,t_index)
+    elseif IC_type == "2 layers"
+        set_phi_as_ic_2l!(phi_array,yp,space_cells,t_index)
+    elseif IC_type == "double delta"
+        set_phi_as_ic_dd!(phi_array,t_index)
+    elseif IC_type == "centred normal"
+        set_phi_as_ic_norm1!(phi_array,t_index)
+    elseif IC_type == "centred 2 normal"
+        set_phi_as_ic_normboth!(phi_array,t_index)
+    elseif IC_type[1] == "double delta difference"
+        set_phi_as_ic_dd_diff!(phi_array,IC_type[2],t_index)
+    elseif IC_type[1] == "2 layers difference"
+        set_phi_as_ic_2l_diff!(phi_array,IC_type[2],yp,space_cells,t_index)
+    elseif IC_type[1] == "1 layer transport, 1 layer empty"
+        set_phi_as_ic_2l_one_empty!(phi_array,IC_type[2],yp,space_cells,t_index)
+    else
+        throw(ArgumentError("Not a valid intitial condition"))
+    end
+    return nothing
+end
+
 
 function assign_f_phi_cell!(f_phi_cell::AbstractArray{TF,5},phi_array::AbstractArray{TF,2}, psi_mesh::PsiGrid{TF}, cell_row::Int, cell_column::Int, t_index::Int) where TF <: AbstractFloat
     "use if cell_points has alreday been determined"
@@ -858,7 +929,7 @@ function particle_motion_model_ref_start(x_pos::Array{T,2},y_pos::Array{T,2}, tu
 end
 
 
-function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -870,21 +941,11 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     phip = zeros((2, np, 1+1)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
 
-    if initial_condition == "Uniform phi_1"
-        set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
-        set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
-        set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
-        set_phi_as_ic_dd!(phip,1)
-    else
-        throw(ArgumentError("Not a valid intitial condition"))
-    end
+    set_phi_as_ic!(phip,initial_condition,x_pos[:,1],y_pos[:,1],space_cells,1)
     assign_f_phi!(f_phi,phip[:,:,1], x_pos[:,1], y_pos[:,1], psi_mesh, space_cells,1)
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
-    omega0_dist = Gamma(omega_mean^2/(omega_sigma_2),(omega_sigma_2)/omega_mean) #this should now match long term distribution of omega
+    omega0_dist = Gamma((omega_mean-p_params.omega_min)^2/(omega_sigma_2),(omega_sigma_2)/(omega_mean-p_params.omega_min)) #this should now match long term distribution of omega
     omegap[:,1] = rand(T, omega0_dist, np)
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
@@ -904,8 +965,8 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         # print(maximum(phip[:,:,t]),' ')
         #E-M solver for omega 
         dw = sqrt(dt).*randn(T, np) #random draws
-        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
-        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>0) #enforcing positivity
+        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.((omegap[:,t].-p_params.omega_min).*(2*omega_sigma_2*omega_mean/T_omega)).*dw
+        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>=p_params.omega_min)+p_params.omega_min.*(omegap[:,t+1].<=p_params.omega_min) #enforcing positivity
 
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
@@ -995,7 +1056,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 end
 
 #constant turb_k_e
-function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1008,22 +1069,12 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     phip = zeros(T, (2, np, 2)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
 
-    if initial_condition == "Uniform phi_1"
-        set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
-        set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
-        set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
-        set_phi_as_ic_dd!(phip,1)
-    else
-        throw(ArgumentError("Not a valid intitial condition"))
-    end
+    set_phi_as_ic!(phip,initial_condition,x_pos[:,1],y_pos[:,1],space_cells,1)
     assign_f_phi!(f_phi,phip[:,:,1], x_pos[:,1], y_pos[:,1], psi_mesh, space_cells,1)
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
-    omega0_dist = Gamma(omega_mean^2/(omega_sigma_2),(omega_sigma_2)/omega_mean) #this should now match long term distribution of omega
-    omegap[:,1] = rand(omega0_dist, np)
+    omega0_dist = Gamma((omega_mean-p_params.omega_min)^2/(omega_sigma_2),(omega_sigma_2)/(omega_mean-p_params.omega_min)) #this should now match long term distribution of omega
+    omegap[:,1] = rand(omega0_dist, np).+p_params.omega_min
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
     ;assign_f_phi_cell!(f_phi,phip[:,cell_particles,1],psi_mesh,i,j,1);return nothing) , x_pos[:,1], y_pos[:,1], space_cells)
@@ -1041,8 +1092,8 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         verbose && print(t,' ')
         #E-M solver for omega 
         dw = sqrt(dt).*randn(T, np) #random draws
-        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
-        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>0) #enforcing positivity
+        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.((omegap[:,t].-p_params.omega_min).*(2*omega_sigma_2*omega_mean/T_omega)).*dw
+        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>=p_params.omega_min)+p_params.omega_min.*(omegap[:,t+1].<=p_params.omega_min) #enforcing positivity
 
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
@@ -1132,8 +1183,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     return nothing
 end
 
-#TODO:make other PSP have same ics
-function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg{T}}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1147,31 +1197,12 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
     gamma = zeros(T, (2, np))
 
-    isa(initial_condition, String) && (initial_condition=(initial_condition,))
-    if initial_condition[1] == "Uniform phi_1"
-        set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition[1] == "triple delta"
-        set_phi_as_ic_td!(phip,1)
-    elseif initial_condition[1] == "2 layers"
-        set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition[1] == "double delta"
-        set_phi_as_ic_dd!(phip,1)
-    elseif initial_condition[1] == "centred normal"
-        set_phi_as_ic_norm1!(phip,1)
-    elseif initial_condition[1] == "centred 2 normal"
-        set_phi_as_ic_normboth!(phip,1)
-    elseif initial_condition[1] == "double delta difference"
-        set_phi_as_ic_dd_diff!(phip,initial_condition[2],1)
-    elseif initial_condition[1] == "2 layers difference"
-        set_phi_as_ic_2l_diff!(phip,initial_condition[2],y_pos[:,1],space_cells,1)
-    else
-        throw(ArgumentError("Not a valid intitial condition"))
-    end
+    set_phi_as_ic!(phip,initial_condition,x_pos[:,1],y_pos[:,1],space_cells,1)
     assign_f_phi!(f_phi,phip[:,:,1], x_pos[:,1], y_pos[:,1], psi_mesh, space_cells,1)
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
-    omega0_dist = Gamma(omega_mean^2/(omega_sigma_2),(omega_sigma_2)/omega_mean) #this should now match long term distribution of omega
-    omegap[:,1] = rand(omega0_dist, np)
+    omega0_dist = Gamma((omega_mean-p_params.omega_min)^2/(omega_sigma_2),(omega_sigma_2)/(omega_mean-p_params.omega_min)) #this should now match long term distribution of omega
+    omegap[:,1] = rand(omega0_dist, np).+p_params.omega_min
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
     ;assign_f_phi_cell!(f_phi,phip[:,cell_particles,1],psi_mesh,i,j,1);return nothing) , x_pos[:,1], y_pos[:,1], space_cells)
@@ -1192,8 +1223,8 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
         verbose && print(t,' ')
         #E-M solver for omega 
         dw = sqrt(dt).*randn(T, np) #random draws
-        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
-        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>0) #enforcing positivity
+        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.((omegap[:,t].-p_params.omega_min).*(2*omega_sigma_2*omega_mean/T_omega)).*dw
+        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>=p_params.omega_min)+p_params.omega_min.*(omegap[:,t+1].<=p_params.omega_min) #enforcing positivity
 
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
@@ -1298,7 +1329,7 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     return nothing
 end
 
-function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squared::AbstractArray{T,1}, f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::String,  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squared::AbstractArray{T,1}, f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1310,22 +1341,11 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
 
     phip = zeros(T, (2, np, 1+1)) #scalar concentration at these points
     phi_pm = zeros(Int, 2, np) #pm pairs for each particle
-
-    if initial_condition == "Uniform phi_1"
-        set_phi_as_ic_up1!(phip,1)
-    elseif initial_condition == "triple delta"
-        set_phi_as_ic_td!(phip,1)
-    elseif initial_condition == "2 layers"
-        set_phi_as_ic_2l!(phip,y_pos[:,1],space_cells,1)
-    elseif initial_condition == "double delta"
-        set_phi_as_ic_dd!(phip,1)
-    else
-        throw(ArgumentError("Not a valid intitial condition"))
-    end
+  set_phi_as_ic!(phip,initial_condition,x_pos[:,1],y_pos[:,1],space_cells,1)
 
     omegap = zeros(T, np,nt+1) #turbulence frequency
-    omega0_dist = Gamma(omega_mean^2/(omega_sigma_2),(omega_sigma_2)/omega_mean) #this should now match long term distribution of omega
-    omegap[:,1] = rand(omega0_dist, np)
+    omega0_dist = Gamma((omega_mean-p_params.omega_min)^2/(omega_sigma_2),(omega_sigma_2)/(omega_mean-p_params.omega_min)) #this should now match long term distribution of omega
+    omegap[:,1] = rand(omega0_dist, np).+p_params.omega_min
     
     eval_by_cell!((i,j,cell_particles)-> (assign_pm!(phi_pm, phip[:,:,1], cell_particles, cell_particles)
     ;assign_f_phi_cell!(f_phi,phip[:,cell_particles,1],psi_mesh,i,j,1);return nothing) , x_pos[:,1], y_pos[:,1], space_cells)
@@ -1343,8 +1363,8 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
         verbose && print(t,' ')
         #E-M solver for omega 
         dw = sqrt(dt).*randn(T, np) #random draws
-        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.(omegap[:,t].*(2*omega_sigma_2*omega_mean/T_omega)).*dw
-        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>0) #enforcing positivity
+        omegap[:,t+1] = omegap[:,t]-(omegap[:,t].-omega_mean)./T_omega.*dt + sqrt.((omegap[:,t].-p_params.omega_min).*(2*omega_sigma_2*omega_mean/T_omega)).*dw
+        omegap[:,t+1] = omegap[:,t+1].*(omegap[:,t+1].>=p_params.omega_min)+p_params.omega_min.*(omegap[:,t+1].<=p_params.omega_min) #enforcing positivity
 
         #stepping the decorrelation times
         t_decorr_p = t_decorr_p.-dt;
@@ -1442,7 +1462,7 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
     return nothing
 end
 
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     
@@ -1481,7 +1501,7 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
 end
 
 #constant turb_k_e
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg{T}}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
