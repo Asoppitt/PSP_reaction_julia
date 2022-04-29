@@ -285,6 +285,27 @@ function set_phi_as_ic_2l_one_empty!(phi_array::Array{TF,3},empty_layer::Integer
     end
     return nothing
 end
+function set_phi_as_ic_2l_one_empty_x!(phi_array::Array{TF,3},empty_layer::Integer,xp::Vector{TF},space_cells::CellGrid{TF}, t_index::Int) where TF<:AbstractFloat
+    #Initial_condition == "1 layer scalar, 1 layer empty"
+    nparticles = size(phi_array)[2]
+    local noise_term = randn(TF, nparticles)
+    # local uniform_noise = rand(nparticles).-0.5
+
+    if empty_layer==0
+        phi_array[2,xp.>0.5*space_cells.length_domain,t_index] = abs.(phi_eps*noise_term[xp.>0.5*space_cells.length_domain] )
+        phi_array[1,xp.>0.5*space_cells.length_domain,t_index] .= 1
+
+        phi_array[1,xp.<=0.5*space_cells.length_domain,t_index] = abs.(phi_eps*noise_term[xp.<=0.5*space_cells.length_domain] )
+        phi_array[2,xp.<=0.5*space_cells.length_domain,t_index] .= abs.(phi_eps*noise_term[xp.<=0.5*space_cells.length_domain] )
+    elseif empty_layer==1
+        phi_array[2,xp.<=0.5*space_cells.length_domain,t_index] = abs.(phi_eps*noise_term[xp.<=0.5*space_cells.length_domain] )
+        phi_array[1,xp.<=0.5*space_cells.length_domain,t_index] .= 1
+
+        phi_array[1,xp.>0.5*space_cells.length_domain,t_index] = abs.(phi_eps*noise_term[xp.>0.5*space_cells.length_domain] )
+        phi_array[2,xp.>0.5*space_cells.length_domain,t_index] .= abs.(phi_eps*noise_term[xp.>0.5*space_cells.length_domain] )
+    end
+    return nothing
+end
 function set_phi_as_ic_dd!(phi_array::Array{TF,3},t_index::Int) where TF<:AbstractFloat
     #Initial_condition == "double delta"
     nparticles = size(phi_array)[2]
@@ -372,7 +393,7 @@ function set_phi_as_ic!(phi_array::Array{TF,3},IC_type::String,xp::Vector{TF},yp
         set_phi_as_ic_norm1!(phi_array,t_index)
     elseif IC_type == "centred 2 normal"
         set_phi_as_ic_normboth!(phi_array,t_index)
-    elseif IC_type in ["double delta difference","2 layers difference","1 layer transport, 1 layer empty"]
+    elseif IC_type in ["double delta difference","2 layers difference","1 layer transport, 1 layer empty","1 layer transport, 1 layer empty x"]
         throw(ArgumentError("Requires addtional parameters"))
     else
         throw(ArgumentError("Not a valid intitial condition"))
@@ -399,6 +420,8 @@ function set_phi_as_ic!(phi_array::Array{TF,3},IC_type::Tuple{String,Vararg},xp:
         set_phi_as_ic_2l_diff!(phi_array,IC_type[2],yp,space_cells,t_index)
     elseif IC_type[1] == "1 layer transport, 1 layer empty"
         set_phi_as_ic_2l_one_empty!(phi_array,IC_type[2],yp,space_cells,t_index)
+    elseif IC_type[1] == "1 layer transport, 1 layer empty x"
+        set_phi_as_ic_2l_one_empty_x!(phi_array,IC_type[2],xp,space_cells,t_index)
     else
         throw(ArgumentError("Not a valid intitial condition"))
     end
@@ -592,7 +615,7 @@ function eval_by_cell!(func!::Function, xp::Vector{TF}, yp::Vector{TF}, space_ce
 end 
 
 #CLt/normal
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(TF, 2,n_abs)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
@@ -610,7 +633,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #CLt/normal Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,Int, Nothing,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
@@ -627,7 +650,7 @@ end
 
 ####Not being updated ####
 #using binomal noise for small numbers of vparticles
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, turb_k_e::Vector{TF}, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(TF,2,n_abs)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
@@ -644,7 +667,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #binomal precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
@@ -660,7 +683,7 @@ end
 ####updates resume ####
 
 #mean
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::Vector{TF}, bc_params::BCParams{TF,TF, Nothing}, t_index::Int) where TF<:AbstractFloat 
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, turb_k_e::Vector{TF}, bc_params::BCParams{TF,TF, Nothing}, t_index::Int) where TF<:AbstractFloat 
     n_abs = sum(abs_points)
     abs_k = bc_params.bc_k.*ones(2,n_abs)
     #K for Erban and Chapman approximation 
@@ -673,7 +696,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, turb_k_e::V
 end
 
 #mean Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF, Nothing}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,TF, Nothing}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
     #K for Erban and Chapman approximation 
     ratios = 1 - Precomp_P #taking mean for limiting case
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
@@ -683,7 +706,7 @@ end
 ###add in non-liner sorbtion as a correction factor from linear
 
 #CLt/normal Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,Int,func_T,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,Int,func_T,true}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
     n_abs = sum(abs_points)
     effective_v_particles =( phip[:,abs_points,t_index].*bc_params.num_vp)
     #K for Erban and Chapman approximation 
@@ -702,7 +725,7 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::
 end
 
 #mean Precomp
-function bc_absorbtion!(phip::Array{TF,3}, abs_points::Vector{Bool}, bc_params::BCParams{TF,TF,func_T}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,TF,func_T}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat where func_T<:Function
     #K for Erban and Chapman approximation 
     n_abs=sum(abs_points)
     phi_vec = [phip[:,abs_points,t_index][:,i] for i=1:n_abs]
@@ -722,7 +745,7 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Ar
     u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
-    bc_interact = zeros(Bool, np, nt, 4)
+    bc_interact = falses(np, nt, 4)
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e[:,1])
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e[:,1])
@@ -798,7 +821,7 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
-    bc_interact = zeros(Bool, np, nt, 4)
+    bc_interact = falses(np, nt, 4)
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
@@ -867,7 +890,7 @@ function particle_motion_model_ref_start(x_pos::Array{T,2},y_pos::Array{T,2}, tu
     u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
-    bc_interact = zeros(Bool, np, nt, 4)
+    bc_interact = falses(np, nt, 4)
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
@@ -929,7 +952,7 @@ function particle_motion_model_ref_start(x_pos::Array{T,2},y_pos::Array{T,2}, tu
 end
 
 
-function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::BitArray{3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1056,7 +1079,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
 end
 
 #constant turb_k_e
-function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::BitArray{3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1183,7 +1206,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
     return nothing
 end
 
-function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::AbstractArray{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::AbstractArray{T,5},x_pos::AbstractArray{T,2},y_pos::AbstractArray{T,2}, turb_k_e::T, bc_interact::BitArray{3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1329,7 +1352,7 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
     return nothing
 end
 
-function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squared::AbstractArray{T,1}, f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squared::AbstractArray{T,1}, f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::BitArray{3}, dt::T, initial_condition::Union{String,Tuple{String,Vararg}},  p_params::PSPParams{T}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     omega_mean=p_params.omega_bar
     omega_sigma_2 = p_params.omega_sigma_2
     T_omega = p_params.T_omega
@@ -1462,7 +1485,7 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
     return nothing
 end
 
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::Array{T,2}, bc_interact::BitArray{3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     
@@ -1501,7 +1524,7 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
 end
 
 #constant turb_k_e
-function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::Array{Bool,3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
+function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T, bc_interact::BitArray{3}, initial_condition::Union{String,Tuple{String,Vararg}}, psi_mesh::PsiGrid{T}, space_cells::CellGrid{T}, bc_params::BCParams{T}, verbose::Bool=false) where T<:AbstractFloat
     np, nt = size(x_pos)
     nt-=1
     precomp_P = min.(bc_params.bc_k.*sqrt.(bc_params.B.*pi./(bc_params.C_0.*turb_k_e)),1)
