@@ -45,6 +45,7 @@ struct BCParams{T<:AbstractFloat, Tvp<:Real, T_corr<:Union{Nothing, Function, Tu
     B::T
     num_vp::Tvp
     corr_factor::T_corr
+    reacting_boundaries::AbstractArray{Bool}#which boundary(ies) react
 end
 
 function cell_grid(x_res ::Int,y_res ::Int,length_domain ::T,height_domain ::T) where T<:AbstractFloat #constructor for CellGrid
@@ -68,25 +69,33 @@ function motion_params(omega_bar::T,C_0::T, B_format::String, u_mean::T) where T
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function, Tuple{Function,Function}}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool; corr_func::T_corr=nothing, reacting_boundaries::AbstractArray{String}=["lower"]) where T<:AbstractFloat where Tvp<:Int where T_corr<:Union{Nothing, Function, Tuple{Function,Function}}
+    boundary_names=["upper", "lower", "right", "left"]
+    reacting_boundaries=lowercase.(reacting_boundaries)
+    any(.!in.(reacting_boundaries,[boundary_names])) && @warn "invalid boundary names:" *join(reacting_boundaries[.!in.(reacting_boundaries,[boundary_names])] , ", ")*"\ncontinuing using valid boundaries"
+    reacting_boundaries_ind = in.(boundary_names,[reacting_boundaries])
     if B_format == "Decay"
-        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func)
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func,reacting_boundaries_ind)
     elseif B_format == "Constant"
-        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,corr_func)
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,corr_func,reacting_boundaries_ind)
     end
 end
 
-function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool, corr_func::T_corr=nothing) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
+function BC_params(bc_k::T, C_0::T, B_format::String, num_vp::Tvp, bc_CLT::Bool; corr_func::T_corr=nothing, reacting_boundaries::AbstractArray{String}=["lower"]) where T<:AbstractFloat where Tvp<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    boundary_names=["upper", "lower", "right", "left"]
+    reacting_boundaries=lowercase.(reacting_boundaries)
+    any(.!in.(reacting_boundaries,[boundary_names])) && @warn "invalid boundary names:" *join(reacting_boundaries[.!in.(reacting_boundaries,[boundary_names])] , ", ")*"\ncontinuing using valid boundaries"
+    reacting_boundaries_ind = in.(boundary_names,[reacting_boundaries])
     num_vp == Inf || throw(DomainError("nvpart_per_part must be Int or Inf"))
     if B_format == "Decay"
-        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+1.5*C_0),num_vp,corr_func)
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1+T(1.5)*C_0),num_vp,corr_func,reacting_boundaries_ind)
     elseif B_format == "Constant"
-        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (1.5*C_0),num_vp,corr_func)
+        return BCParams{T,Tvp,T_corr,bc_CLT}(bc_k, C_0, (T(1.5)*C_0),num_vp,corr_func,reacting_boundaries_ind)
     end
 end
 
-function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T,omega_min::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool, corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0)) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
-    return PSP_params(omega_bar, omega_sigma_2,omega_min, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func)
+function PSP_motion_bc_params(omega_bar::T, omega_sigma_2::T,omega_min::T, C_0::T, B_format::String, c_phi::T, c_t::T,u_mean::T,bc_k::T,num_vp::Real,bc_CLT::Bool; corr_func::T_corr=nothing, react_func=((x,y)->0,(x,y)->0), reacting_boundaries::AbstractArray{String}=["lower"]) where T<:AbstractFloat where T_corr<:Union{Nothing, Function}
+    return PSP_params(omega_bar, omega_sigma_2,omega_min, c_phi, c_t, react_func), motion_params(omega_bar,C_0, B_format, u_mean), BC_params(bc_k, C_0, B_format, num_vp, bc_CLT,corr_func=corr_func,reacting_boundaries=reacting_boundaries)
 end
 
 function assign_pm!(phi_pm::Matrix{Int}, phi_array_t::Array{T}, particles::Vector{Int}, cell_points::Vector{Int}) where T<:AbstractFloat
@@ -821,7 +830,7 @@ function particle_motion_model(x_pos::Array{T,2},y_pos::Array{T,2}, turb_k_e::T,
     u_mean=m_params.u_mean
     np = size(x_pos)[1]
     nt = size(x_pos)[2]-1
-    bc_interact = falses(np, nt, 4)
+    bc_interact = falses(np, nt, 4)#3rd index is for: upper, lower, right, left
     #intitial vaules of velocity, maintaining consitancy with energy
     uxp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
     uyp = randn(T, np).*sqrt.(2/3 .*turb_k_e)
@@ -1025,7 +1034,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         diffusion = zeros(2,np)
         diffusion[1,:] = (phip[1,:,1]-phi_c[1,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
         diffusion[2,:] = (phip[2,:,1]-phi_c[2,:]).*(exp.(-c_phi.*0.5.*omegap[:,t].*dt).-1.0)
-        reaction = zeros(T, 2,np) # body reaction
+        reaction = zeros(T, 2,np) # body reactionany(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1]
         # reaction = dt.*(reaction).*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
         dphi = (diffusion .+ reaction)
 
@@ -1044,7 +1053,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         #performing adjustment to mean 0
         corr_factor = zeros(T, 2,np)
         
-        eval_by_cell!(function (i,j,cell_particles)
+        eval_by_cell!(function (i,j,cell_particles)any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1]
             for phi_i=1:2
                 phi_mean = mean(dphi[phi_i,cell_particles])
                 if phi_mean != 0 #isn't true for empty cells
@@ -1068,7 +1077,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,1+1] = phip[:,:,1+1].*(phip[:,:,1+1].>0) #forcing positive concentration
         end
 
-        bc_absorbtion!(phip,bc_interact[:,t,2],turb_k_e[bc_interact[:,t,2],t+1],bc_params,1+1) #currently only reacting on bottom bc
+        bc_absorbtion!(phip,any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],turb_k_e[any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],t+1],bc_params,1+1) #currently only reacting on bottom bc
 
         assign_f_phi!(f_phi,phip[:,:,1+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         phip[:,:,1] = phip[:,:,2]
@@ -1196,7 +1205,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
             phip[:,:,1+1] = phip[:,:,1+1].*(phip[:,:,1+1].>0) #forcing positive concentration
         end
 
-        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,1+1, precomp_P) #currently only reacting on bottom bc
+        bc_absorbtion!(phip,any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],bc_params,1+1, precomp_P) #currently only reacting on bottom bc
 
         assign_f_phi!(f_phi,phip[:,:,1+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         # print(maximum(phip[:,:,t]),' ')
@@ -1340,7 +1349,7 @@ function PSP_model_record_phi_local_diff!(gphi::AbstractArray{T,3},f_phi::Abstra
             return nothing
         end, x_pos[:,t], y_pos[:,t], space_cells)
         
-        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,2, precomp_P) #currently only reacting on bottom bc
+        bc_absorbtion!(phip,any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],bc_params,2, precomp_P) #currently only reacting on bottom bc
         
         assign_f_phi!(f_phi, phip[:,:,1+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         phip[:,:,1] = phip[:,:,2]
@@ -1475,7 +1484,7 @@ function PSP_model_record_reacting_mass!(edge_mean::AbstractArray{T,1}, edge_squ
             return nothing
         end,  x_pos[:,t], y_pos[:,t], space_cells)
 
-        bc_absorbtion!(phip,bc_interact[:,t,2],bc_params,1+1, precomp_P) #currently only reacting on bottom bc
+        bc_absorbtion!(phip,any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],bc_params,1+1, precomp_P) #currently only reacting on bottom bc
 
         assign_f_phi!(f_phi,phip[:,:,1+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
         # print(maximum(phip[:,:,t]),' ')
@@ -1515,7 +1524,7 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
     
     for t in 1:nt
         verbose && print(t,' ')
-        bc_absorbtion!(phip,bc_interact[:,t,2],turb_k_e[bc_interact[:,t,2],t],bc_params,t) #currently only reacting on bottom bc
+        bc_absorbtion!(phip,any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],turb_k_e[any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1],t],bc_params,t) #currently only reacting on bottom bc
         phip[:,:,t+1] = phip[:,:,t]
         assign_f_phi!(f_phi,phip[:,:,t+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
     end
@@ -1555,7 +1564,7 @@ function make_f_phi_no_PSP!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2
     
     for t in 1:nt
         verbose && print(t,' ')
-        bc_absorbtion!(phip, bc_interact[:,t,2], bc_params, t, precomp_P) #currently only reacting on bottom bc
+        bc_absorbtion!(phip, any(bc_interact[:,t,bc_params.reacting_boundaries], dims=2)[:,1], bc_params, t, precomp_P) #currently only reacting on bottom bc
         phip[:,:,t+1] = phip[:,:,t]
         assign_f_phi!(f_phi,phip[:,:,t+1], x_pos[:,t+1], y_pos[:,t+1], psi_mesh, space_cells,t+1)
     end
