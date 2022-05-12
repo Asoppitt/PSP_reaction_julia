@@ -1166,7 +1166,6 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         diffusion = zeros(T, 2,np)
         diffusion[1,:] = (phip[1,:,1]-phi_c[1,:]).*(exp.(-c_phi.*0.5.*omegap[:,1].*dt).-1.0)
         diffusion[2,:] = (phip[2,:,1]-phi_c[2,:]).*(exp.(-c_phi.*0.5.*omegap[:,1].*dt).-1.0)
-        # reaction = dt.*(reaction).*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
         dphi = diffusion 
         # ensuring mean 0 change
         # generating a random orthonormal basis
@@ -1205,7 +1204,7 @@ function PSP_model!(f_phi::Array{T,5},x_pos::Array{T,2},y_pos::Array{T,2}, turb_
         dphi = T_mat*dphi #return to old coords
 
         #reaction has to be done after mean zero correction - or it has no effect
-        reaction = zeros(T, 2,np) # body reaction
+        reaction = zeros(T, 2,np) # bulk reaction
         reaction[1,:] = dt.*(p_params.reaction_form[1].(phip[1,:,1],phip[2,:,1]))#.*exp.(c_phi.*0.5.*omegap[:,t].*dt) #integration of reation term to match diffusion scheme, uncomment if reaction !=0
         reaction[2,:] = dt.*(p_params.reaction_form[2].(phip[1,:,1],phip[2,:,1]))
         dphi .+= reaction
