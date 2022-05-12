@@ -25,10 +25,6 @@ read!(data_folder*"array_shape",data_shape)
 nt = data_shape[5]
 psi_partions_num = data_shape[1]
 phi_domain = [0,1.01]
-Del_phi = (phi_domain[2]-phi_domain[1])/psi_partions_num
-Del_phi_x_phi = (Del_phi)^2 
-Del_phi_x_phi = (Del_phi)^2 
-Del_phi_x_phi = (Del_phi)^2 
 x_res=data_shape[4] #number of cells in x dim
 y_res=data_shape[3]
 in_data=zeros(float_type,psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
@@ -36,13 +32,6 @@ length_domain = 0.20 #length of periodic element
 height_domain = 0.01
 T=0.1 #total time
 dt=T/(nt)
-k = 0.938
-C_0 = 2.1
-omega_mean=5
-B=(1.5*C_0)
-bc_k=0.25
-D=2*C_0*k/((B^2)*omega_mean)
-do_flux = false
 read!(data_folder*"data",in_data)
 t_space = LinRange(0,nt*dt,nt+1)
 x_space_edges = LinRange(0,length_domain,x_res+1)

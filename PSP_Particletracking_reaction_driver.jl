@@ -21,10 +21,10 @@ float_type = Float32
 
 verbose=true #printing of step numbers
 
-T=0.10 #total time
+T=0.10 #total time - is not stored as part of data
 
 #geometry controls
-#spacial dimentions
+#spacial dimentions - only rectangular geometry is simulated
 length_domain = float_type(0.2) #length of periodic element
 height_domain = float_type(0.01)
 #dimesions in number of cells
@@ -39,19 +39,24 @@ psi_domain = [float_type(0.0),float_type(1.01)]
 #controls for omega distribution
 #omega follows:
 #dω=-ω(ω-̄ω)dt+√(2σ^2(ω-ω_min)ω)dW
+#giving statistics E[ω]=omega_bar, Var[ω]=omega_sigma_2
 omega_bar = float_type(10.0) #mean turb freq
 omega_sigma_2 = float_type(1) #variance of turb freq - σ^2
 omega_min = float_type(0.00) # minimum value for omega - acts as a shift on gamma distribution. scales as O(1/λ_max^2) where λ_max is the maximum lengthscale 
 #mixing paramters
-B_format = "Constant"
 c_phi = float_type(25.0)#streangth of mixing
 c_t = float_type(2.0)#re-pairing timescale parameter
 #velocity mean and variance
+#velocity follows:
+#u=u_mean+u^*
+#du^*=(-0.5*B(C_0)*omega_bar*u^*)*dt+sqrt.(C_0.*turb_k_e[:,t].*omega_bar)dW
+#giving statistics E[u]=u_mean, Var[u]=turb_k_e
 u_mean = float_type(3) #velocity mean
 turb_k_e= float_type(0.938) #turbulent kinetic energy = 3/2 Var(u)
 C_0 = float_type(2.1) # ~Kolmogorov constant - a rate for velocity change
+B_format = "Constant"
 #strength of boundary reaction: 
-#Ddϕ/dx=bc_k*\phi
+#Ddϕ/dx=bc_k*ϕ at boundary
 bc_k = float_type(0.0)
 reacting_boundaries=["lower",]
 #parmeters for random bc
