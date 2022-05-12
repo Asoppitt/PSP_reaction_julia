@@ -68,6 +68,9 @@ integral_mean_1 = sum(phi_1_means,dims=[1,2])[1,1,:].* 1/(y_res*x_res)
 integral_2ndmom_1 = sum(phi_1_2ndmom,dims=[1,2])[1,1,:].* 1/(y_res*x_res)
 
 plt1=plot()
+plt1_1=plot()
+plt1_12=plot()
+plt1_2=plot()
 plt2=plot()
 plt3=plot()
 plt4=plot()
@@ -79,7 +82,29 @@ xlabel="time",
 label=""
 )
 
-contour!(plt2,t_space[:],psi_spacing,integral_f_phi_1[:,:],
+plot!(plt1_1,t_space[2:end-1],-0.5*(integral_mean_1[3:end]-integral_mean_1[1:end-2])/dt,
+title="Evolution of average reaction rate over time",
+ylabel="reaction rate",
+xlabel="time",
+label=""
+)
+
+plot!(plt1_12,t_space[2:end-1],-0.5*(integral_mean_1[3:end]-integral_mean_1[1:end-2])/dt,
+title="Comparison of scalar disipation rate and reaction rate",
+ylabel="reaction rate",
+xlabel="time",
+label=""
+)
+plot!(plt1_12,t_space[2:end-1],-0.5*(integral_2ndmom_1[3:end]-integral_2ndmom_1[1:end-2])/dt,label="")
+
+plot!(plt1_2,t_space[2:end-1],-0.5*(integral_2ndmom_1[3:end]-integral_2ndmom_1[1:end-2])/dt,
+title="Evolution of scalar disipation rate over time",
+ylabel="χ",
+xlabel="time",
+label=""
+)
+
+heatmap!(plt2,t_space[:],psi_spacing,integral_f_phi_1[:,:],
 levels=200, 
 color= colormap("RdBu", logscale=true),
 title="Evolution of whole domain PDF over time",
@@ -89,7 +114,7 @@ colorbartitle="Relative frequency",
 fill=true,
 line=false)
 
-contour!(plt3,t_space[:],y_space,x_integral_means_1[:,:],
+heatmap!(plt3,t_space[:],y_space,x_integral_means_1[:,:],
 levels=200, 
 # color= colormap("RdBu", logscale=true),
 title="Evolution of mean concentration vs y over time",
@@ -99,7 +124,7 @@ colorbartitle="concentration",
 fill=true,
 line=false)
 
-heatmap!(plt4,x_space[:],y_space,phi_1_means[:,:,1],#change the final index in phi_1_means to choose time plotted
+heatmap!(plt4,x_space[:],y_space,phi_1_2ndmom[:,:,1],#change the final index in phi_1_means to choose time plotted
 levels=200, 
 # color= colormap("RdBu", logscale=true),
 title="Mean ϕ1 vs space at the intial time",
@@ -117,9 +142,12 @@ for x in x_space_edges
 end
 
 savefig(plt1,image_folder*"mean_over_time")
+savefig(plt1_1,image_folder*"rate_over_time")
+savefig(plt1_12,image_folder*"rvchi_over_time")
+savefig(plt1_2,image_folder*"chi_over_time")
 savefig(plt2,image_folder*"pdf_over_time")
 savefig(plt3,image_folder*"mean_y_over_time")
-savefig(plt4,image_folder*"final_time_concentarions")
+savefig(plt4,image_folder*"initial_time_concentarions")
 
 # uncommentfor display. If Plots backend is set to plotlyjs these are interactive
 # display(plt1)

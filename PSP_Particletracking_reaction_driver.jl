@@ -58,6 +58,9 @@ reacting_boundaries=["lower",]
 num_vp = float_type(Inf)
 bc_CLT = true
 
+bulk_k=float_type(0.0)
+bulk_reaction=((a,b)->float_type(0),(a,b)->float_type(0))
+
 PSP_on = true
 #intial condtion one of:
 #"Uniform phi_1","triple delta","2 layers","double delta","centred normal","centred 2 normal",
@@ -73,7 +76,7 @@ step_95=2*sqrt((2/3)*turb_k_e)*dt#95% of steps will be less than this
 
 space_cells = pptr.cell_grid(x_res,y_res,length_domain,height_domain)
 psi_mesh = pptr.psi_grid(psi_partions_num, psi_domain)
-mix_params, move_params, bc_params = pptr.PSP_motion_bc_params(omega_bar, omega_sigma_2,omega_min, C_0, B_format, c_phi, c_t, u_mean, bc_k, num_vp, bc_CLT, reacting_boundaries=reacting_boundaries)
+mix_params, move_params, bc_params = pptr.PSP_motion_bc_params(omega_bar, omega_sigma_2,omega_min, C_0, B_format, c_phi, c_t, u_mean, bc_k, num_vp, bc_CLT, bulk_reaction=bulk_reaction, reacting_boundaries=reacting_boundaries)
 
 (bc_params.bc_k*sqrt(pi*bc_params.B/(bc_params.C_0*turb_k_e))>1) && throw(ErrorException("reaction prob >1"))
 

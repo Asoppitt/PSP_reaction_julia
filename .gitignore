@@ -1,0 +1,10 @@
+Data*
+data*
+temp*
+#.gitignore
+test*
+Test*
+.vscode/
+dist_plots/
+*.toml
+plots/
