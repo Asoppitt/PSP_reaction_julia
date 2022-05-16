@@ -63,6 +63,7 @@ plt1_2=plot()
 plt2=plot()
 plt3=plot()
 plt4=plot()
+plt5=plot()
 
 plot!(plt1,t_space,integral_mean_1,
 title="Evolution of mean concentration over time",
@@ -113,10 +114,20 @@ colorbartitle="concentration",
 fill=true,
 line=false)
 
-heatmap!(plt4,x_space[:],y_space,phi_1_2ndmom[:,:,1],#change the final index in phi_1_means to choose time plotted
+heatmap!(plt4,x_space[:],y_space,integral_mean_1[:,:,1],#change the final index in phi_1_means to choose time plotted
 levels=200, 
 # color= colormap("RdBu", logscale=true),
 title="Mean ϕ1 vs space at the intial time",
+ylabel="y",
+xlabel="x",
+colorbartitle="concentration",
+fill=true,
+line=false)
+
+heatmap!(plt5,x_space[:],y_space,integral_mean_1[:,:,end],#change the final index in phi_1_means to choose time plotted
+levels=200, 
+# color= colormap("RdBu", logscale=true),
+title="Mean ϕ1 vs space at the final time",
 ylabel="y",
 xlabel="x",
 colorbartitle="concentration",
@@ -137,12 +148,17 @@ savefig(plt1_2,image_folder*"chi_over_time")
 savefig(plt2,image_folder*"pdf_over_time")
 savefig(plt3,image_folder*"mean_y_over_time")
 savefig(plt4,image_folder*"initial_time_concentarions")
+savefig(plt5,image_folder*"final_time_concentarions")
 
 # uncommentfor display. If Plots backend is set to plotlyjs these are interactive
 # display(plt1)
+# display(plt1_1)
+# display(plt1_2)
+# display(plt1_12)
 # display(plt2)
 # display(plt3)
 # display(plt4)
+# display(plt5)
 # #used for holding host process for plots open - not needed for vscode operation
 # print(stdout, "press enter to close plots")
 # read(stdin, 1)
