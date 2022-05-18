@@ -1,7 +1,11 @@
 # PSP_reaction_julia
 
-Dependencies for the module and drivers are :Random, Distributions, StatsBase, LinearAlgebra, Statistics 
-Additionally Plots is needed for the plotting code
+A selection of drivers and plotting tools for the TurbulentMixingParticleTrackingReactions module
+
+Dependencies:   Julia 1.6 is required.
+                TurbulentMixingParticleTrackingReactions can be found at https://github.com/Asoppitt/TurbulentMixingParticleTrackingReactions.jl . Install using \`import Pkg; Pkg.add(url="https://github.com/Asoppitt/TurbulentMixingParticleTrackingReactions.jl")\`
+Additionally for the drivers: Random
+Additionally for the plotting code: Plots
 
 for use, ensure  PSP_Particletracking_module.jl is in the same folder as the drivers
 

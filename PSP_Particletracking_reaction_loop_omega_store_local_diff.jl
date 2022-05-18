@@ -1,6 +1,5 @@
 import Random
-include("PSP_Particletracking_module.jl")
-pptr = PSPParticleTrackingReactions
+using TurbulentMixingParticleTrackingReactions
 
 Random.seed!(12345) #setting a seed
 
@@ -52,10 +51,10 @@ dt = float_type(T/nt)#float_type(0.0002)  # time step
 println(nt)
 #95% of steps will be less than this
 (((u_95_f+u_mean)*dt)>length_domain/x_res || ((u_95_f)*dt)>height_domain/y_res) && @warn "cell size smaller than >5% steps"
-space_cells = pptr.cell_grid(x_res,y_res,length_domain,height_domain)
-psi_mesh = pptr.psi_grid(psi_partions_num, psi_domain)
+space_cells = cell_grid(x_res,y_res,length_domain,height_domain)
+psi_mesh = psi_grid(psi_partions_num, psi_domain)
 
-# _, move_params, bc_params_ = pptr.PSP_motion_bc_params(omega_bar, omega_sigma_2, C_0, B_format, c_phi, c_t, u_mean, bc_k, 10, true,bc_non_lin_corr) #bc_params get dummy values
+# _, move_params, bc_params_ = PSP_motion_bc_params(omega_bar, omega_sigma_2, C_0, B_format, c_phi, c_t, u_mean, bc_k, 10, true,bc_non_lin_corr) #bc_params get dummy values
 
 # (bc_params_.bc_k*sqrt(pi*bc_params_.B/(bc_params_.C_0*turb_k_e))>1) && throw(ErrorException("reaction prob >1"))
 
@@ -63,19 +62,19 @@ psi_mesh = pptr.psi_grid(psi_partions_num, psi_domain)
 # yp = zeros(float_type, np,nt+1)
 # xp[:,1] = length_domain.*rand(float_type, np)
 # yp[:,1] = height_domain.*rand(float_type, np)
-# bc_interact = pptr.particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
+# bc_interact = particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
 # any(xp.>length_domain)||any(xp.<0) && throw(ErrorException(""))
 # throw(ErrorException("n"))
 write(base_filename*"array_shape", [psi_partions_num, psi_partions_num, y_res, x_res, nt])
 for omega_bar = float_type.([4,12,16])#[22,24,28,32,40,50])
     omega_sigma_2 = float_type(0.25*omega_bar)
     
-    mix_params, move_params, _ =pptr.PSP_motion_bc_params(omega_bar, omega_sigma_2,float_type(0.0), C_0, B_format, c_phi, c_t, u_mean, bc_k, 200, true, corr_func=bc_non_lin_corr, bulk_reaction=reaction)
+    mix_params, move_params, _ =PSP_motion_bc_params(omega_bar, omega_sigma_2,float_type(0.0), C_0, B_format, c_phi, c_t, u_mean, bc_k, 200, true, corr_func=bc_non_lin_corr, bulk_reaction=reaction)
     xp = zeros(float_type, np,nt+1)
     yp = zeros(float_type, np,nt+1)
     xp[:,1] = length_domain.*rand(float_type, np)
     yp[:,1] = height_domain.*rand(float_type, np)
-    bc_interact = pptr.particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
+    bc_interact = particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
     any(xp.>length_domain)||any(xp.<0) && throw(ErrorException(""))
     for NVP = [200]
         (NVP < Inf) && (NVP=Int(NVP))
@@ -85,16 +84,16 @@ for omega_bar = float_type.([4,12,16])#[22,24,28,32,40,50])
             filename *="_w"*string(omega_bar)
             PSP_on || (filename *= "_no_PSP")
             # isfile(filename) && (println(filename, ' ', "skipped");continue)
-            bc_params = pptr.BC_params(bc_k, C_0, B_format, NVP, bc_CLT,corr_func=bc_non_lin_corr)
+            bc_params = BC_params(bc_k, C_0, B_format, NVP, bc_CLT,corr_func=bc_non_lin_corr)
             f_phi = zeros(float_type, psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
             # phigamma_mean = zeros(float_type, y_res, x_res, nt)
             edge_mean = zeros(float_type,nt+1)
             edge_2 = zeros(float_type,nt+1)
             if PSP_on
-                pptr.PSP_model!(f_phi,xp,yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, true)
-                # pptr.PSP_model_record_phi_local_diff!(phigamma_mean ,f_phi ,xp,yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, true)
+                PSP_model!(f_phi,xp,yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, true)
+                # PSP_model_record_phi_local_diff!(phigamma_mean ,f_phi ,xp,yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, true)
             else
-                pptr.make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, ic, psi_mesh, space_cells, bc_params, true)
+                make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, ic, psi_mesh, space_cells, bc_params, true)
             end
             write(filename, f_phi)
             # write(filename*"phigamma", phigamma_mean)

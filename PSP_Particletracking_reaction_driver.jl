@@ -1,6 +1,5 @@
 import Random
-include("PSP_Particletracking_module.jl")
-pptr = PSPParticleTrackingReactions
+using TurbulentMixingParticleTrackingReactions
 
 Random.seed!(12345) #setting a seed
 
@@ -82,9 +81,9 @@ println(nt)
 step_95=2*sqrt((2/3)*turb_k_e)*dt#95% of steps will be less than this
 (step_95>length_domain/x_res || step_95>height_domain/y_res) && @warn "cell size smaller than >5% steps"
 
-space_cells = pptr.cell_grid(x_res,y_res,length_domain,height_domain)
-psi_mesh = pptr.psi_grid(psi_partions_num, psi_domain)
-mix_params, move_params, bc_params = pptr.PSP_motion_bc_params(omega_bar, omega_sigma_2,omega_min, C_0, B_format, c_phi, c_t, u_mean, bc_k, num_vp, bc_CLT, bulk_reaction=bulk_reaction, reacting_boundaries=reacting_boundaries, corr_func=bc_non_lin_corr)
+space_cells = cell_grid(x_res,y_res,length_domain,height_domain)
+psi_mesh = psi_grid(psi_partions_num, psi_domain)
+mix_params, move_params, bc_params = PSP_motion_bc_params(omega_bar, omega_sigma_2,omega_min, C_0, B_format, c_phi, c_t, u_mean, bc_k, num_vp, bc_CLT, bulk_reaction=bulk_reaction, reacting_boundaries=reacting_boundaries, corr_func=bc_non_lin_corr)
 
 (bc_params.bc_k*sqrt(pi*bc_params.B/(bc_params.C_0*turb_k_e))>1) && throw(ErrorException("reaction prob >1"))
 
@@ -92,14 +91,14 @@ xp = zeros(float_type, np,nt+1)
 yp = zeros(float_type, np,nt+1)
 xp[:,1] = length_domain.*rand(float_type, np)
 yp[:,1] = height_domain.*rand(float_type, np)
-bc_interact = pptr.particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
+bc_interact = particle_motion_model(xp,yp,turb_k_e,move_params,dt,space_cells)
 
 f_phi = zeros(float_type, psi_partions_num, psi_partions_num, y_res, x_res, nt+1)
 write(base_filename*"array_shape", [psi_partions_num, psi_partions_num, y_res, x_res, nt])
 if PSP_on 
-    pptr.PSP_model!(f_phi ,xp, yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, verbose)
+    PSP_model!(f_phi ,xp, yp, turb_k_e, bc_interact, dt, ic, mix_params, psi_mesh, space_cells, bc_params, verbose)
 else
-    pptr.make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, ic, psi_mesh, space_cells, bc_params, verbose)
+    make_f_phi_no_PSP!(f_phi,xp,yp, turb_k_e, bc_interact, ic, psi_mesh, space_cells, bc_params, verbose)
 end
 write(base_filename*"data", f_phi)
 println("data saved at:"*base_filename*"data")

@@ -2,7 +2,7 @@ using Plots; GR.init()#plotlyjs()
 import Statistics as st
 
 plt=plot()
-base_filename = "Data/poster/var_NVP/F32/"
+base_filename = "Data/poster/var_w/F32/"
 data_shape = zeros(Int,5)
 read!(base_filename*"array_shape",data_shape)
 #  [psi_partions_num, psi_partions_num, y_res, x_res, nt+1]
@@ -12,8 +12,9 @@ psi_partions_num = data_shape[1]
 phi_domain = [0,1.01]
 x_res=data_shape[4] #number of cells in x dim
 y_res=data_shape[3]
-for omega_bar =  Float32.([8])#[4,8,12,16,18,20])#[1,4,8,12,16,18,20,22,24,28,32,40,50])
-    for NVP= [50,200,Float32(Inf)]
+plt=plot()
+for omega_bar =  Float32.([4,8,16,22])#[4,8,12,16,18,20])#[1,4,8,12,16,18,20,22,24,28,32,40,50])
+    for NVP= [200]
         (NVP<Inf) && (NVP=Int(NVP))
         filename=base_filename*string(NVP)*"_vp"
         (NVP==1)||(filename*="_CLT")
@@ -51,8 +52,8 @@ for omega_bar =  Float32.([8])#[4,8,12,16,18,20])#[1,4,8,12,16,18,20,22,24,28,32
         x_integral_f_phi_1 = sum(in_data,dims=[2,4])[:,1,:,1,:].* 1/x_res
         integral_f_phi_1 = sum(x_integral_f_phi_1,dims=2)[:,1,:].* 1/y_res
 
-        plt1=plot()
         plt2=plot()
+        plt1=plot()
         # do_flux && plot!(t_space,flux_y0_1_int)
         # do_flux && plot(t_space,flux_y0_vel)
         # surface(t_space,y_space,y_integral_means,ylabel="y",
@@ -61,12 +62,25 @@ for omega_bar =  Float32.([8])#[4,8,12,16,18,20])#[1,4,8,12,16,18,20,22,24,28,32
         # plot!(t_space,[ x_integral_means[end,i] for i=1:nt+1])
         # plot!(t_space,[ st.mean(x_integral_means[:,i]) for i=1:nt+1])
         # surface(x_space,y_space,phi_1_means[:,:,nt], ylabel="y")
-        contourf!(plt1,t_space[:],psi_spacing[1:ceil(Int,end)],integral_f_phi_1[1:ceil(Int,end),:], levels=100,
+        # heatmap!(plt1,t_space[:],psi_spacing[1:ceil(Int,end)],integral_f_phi_1[1:ceil(Int,end),:], levels=100,
+        # color= colormap("RdBu", logscale=true),
+        # # title="Contour Plot of ϕ denisty over time for N → ∞",
+        # colorbartitle="Relative frequency",
+        # colorbar_titlefontsize=18,
+        # tickfontsize=14,
+        # ticks=false,
+        # guidefontsizes=18 )
+        heatmap!(plt1,t_space[:],psi_spacing[1:ceil(Int,end)],integral_f_phi_1[1:ceil(Int,end),:], levels=100,
         color= colormap("RdBu", logscale=true),
         # title="Contour Plot of ϕ denisty over time for N → ∞",
-        ylabel="ϕ",
-        xlabel="time",
-        colorbartitle="Relative frequency")
+        ylabel="Normalised Concentration",
+        xlabel="Time (dimensionless)",
+        colorbartitle="Relative frequency",
+        colorbar_titlefontsize=18,
+        tickfontsize=14,
+        # clims=[0,12],
+        colorbar=:none,
+        guidefontsizes=18 )
         # contour!(plt2,t_space[:],psi_spacing,integral_f_phi_1[:,:],
         # levels=200, 
         # color= colormap("RdBu", logscale=true),
@@ -83,13 +97,13 @@ for omega_bar =  Float32.([8])#[4,8,12,16,18,20])#[1,4,8,12,16,18,20,22,24,28,32
         # plot(t_space,x_integral_means[1,:])
         display(plt1)
         # display(plt2)
-        # try
-        #     folder = "poster_plots/var_NVP/"
-        #     run(`mkdir $folder`)
-        # catch e 
-        #     isa(e,ProcessFailedException) || rethrow()
-        # end
-        savefig(plt1,"poster_plots/var_NVP/"*string(NVP)*"contour")
+        try
+            folder = "poster_plots/var_w/"
+            run(`mkdir $folder`)
+        catch e 
+            isa(e,ProcessFailedException) || rethrow()
+        end
+        savefig(plt1,"poster_plots/var_w/"*string(Int(omega_bar)))#*string(NVP)*"NVP_")
         # savefig(plt2,"dist_plots/thin"*string(NVP)*"contour_betterdecorr")
     end
 end
