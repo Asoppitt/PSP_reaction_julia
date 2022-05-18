@@ -5,6 +5,10 @@ import StatsBase as sb
 import LinearAlgebra as la
 import Statistics as st
 
+export cell_grid,BC_params,psi_grid,motion_params,PSP_motion_bc_params,
+particle_motion_model, PSP_model!, particle_motion_model_ref_start, PSP_model_record_phi_local_diff!,
+PSP_model_record_reacting_mass!
+
 phi_eps=1e-8
 struct CellGrid{T<:AbstractFloat}
     x_res ::Int
@@ -687,6 +691,16 @@ function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCP
     xi = [rand(xi_dist[i,j]) for i in 1:2, j in 1:n_abs]
     ratios = [effective_v_particles[i,j]>0 ? xi[i,j]./ceil.(effective_v_particles[i,j]) : 0 for i in 1:2, j in 1:n_abs]
     phip[:, abs_points, t_index] = phip[:, abs_points, t_index].*ratios
+    return nothing
+end
+
+#binary Precomp, need to edit this file to enable this, (comment out binomal precomp)
+function bc_absorbtion!(phip::Array{TF,3}, abs_points::BitVector, bc_params::BCParams{TF,Int, Nothing,false}, t_index::Int, Precomp_P::TF) where TF<:AbstractFloat 
+    #K for Erban and Chapman approximation 
+    n_abs = sum(abs_points)
+    xi=ones(size(phip)[2])
+    xi[abs_points]=rand(n_abs)
+    phip[:, xi.<Precomp_P, t_index] .=0 
     return nothing
 end
 ####updates resume ####

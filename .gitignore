@@ -7,4 +7,5 @@ Test*
 .vscode/
 dist_plots/
 *.toml
-plots/
+plots*
+poster_plots/
