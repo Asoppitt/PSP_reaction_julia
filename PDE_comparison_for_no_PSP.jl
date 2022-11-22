@@ -5,7 +5,8 @@ using OrdinaryDiffEq, ModelingToolkit, DiffEqOperators, Plots; plotlyjs()
 # omega_mean=10.0
 # B=(1.5*C_0)
 # bc_k=0.3
-# D=2*C_0*k/((B^2)*omega_mean)
+# D=2*k/((1.5^2*C_0)*omega_mean)
+#bc_k*sqrt(π*(1.5*omega_mean)/k)
 D=0.0001
 height_domain =0.01
 length_domain =0.20
