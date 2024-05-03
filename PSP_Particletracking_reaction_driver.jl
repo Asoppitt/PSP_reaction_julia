@@ -1,9 +1,9 @@
 import Random
-using TurbulentMixingParticleTrackingReactions
+# using TurbulentMixingParticleTrackingReactions
 using ProfileView
 using Distributions
-# include("/home/u2093579/Documents/Project_code/TurbulentMixingParticleTrackingReactions/src/PSP_Particletracking_module.jl")
-# include("/home/u2093579/Documents/Project_code/TurbulentMixingParticleTrackingReactions/src/save_as_you_go.jl")
+include("/home/u2093579/Documents/Project_code/TurbulentMixingParticleTrackingReactions/src/PSP_Particletracking_module.jl")
+include("/home/u2093579/Documents/Project_code/TurbulentMixingParticleTrackingReactions/src/save_as_you_go.jl")
 
 Random.seed!(12345) #setting a seed
 
@@ -25,7 +25,7 @@ float_type = Float32
 verbose=true #printing of step numbers
 
 T=250000*7.63364e-09 #total time - is not stored as part of data
-nt=2
+nt=5
 #geometry controls
 #spacial dimentions - only rectangular geometry is simulated
 length_domain = float_type(5e-3) #length of periodic element
@@ -55,7 +55,7 @@ psi_domain = [float_type(0.0),float_type(1.01)]*dim_phi
 #giving statistics E[ω]=omega_bar, Var[ω]=omega_sigma_2
 a=LogNormal(2.75384,2.0475)#(3.8975985750068634,2.8665512122893175)#(3.8731577179478354,2.585404654956942)
 omega_bar = float_type(mean(a))./dim_t #mean turb frequency
-omega_sigma_2 = float_type(var(a))./dim_t^2#float_type(1.60090716183498e11)# #variance of turb freq - σ^2
+omega_sigma_2 = float_type(var(a))./float_type(mean(a)^2) #normalised variance of turb freq - σ^2
 omega_min = float_type(0.00)./dim_t # minimum value for omega - acts as a shift on gamma distribution. scales as O(1/λ_max^2) where λ_max is the maximum lengthscale 
 omega_dist=:LogNormal#:Gamma#:LogNormal
 a=nothing
@@ -67,7 +67,7 @@ c_t = float_type(2.0).*dim_t#re-pairing timescale parameter
 #u=u_mean+u^*
 #du^*=(-0.5*B(C_0)*omega_bar*u^*)*dt+sqrt.(C_0.*turb_k_e[:,t].*omega_bar)dW
 #giving statistics E[u]=u_mean, Var[u]=turb_k_e
-u_mean = float_type(0.36)*dim_x/dim_t #velocity mean
+u_mean = float_type(0)#0.36)*dim_x/dim_t #velocity mean
 
 if false # reading mean velocity from file
     solid_thickness=max(ceil(Int,3000/2),4)
@@ -125,12 +125,12 @@ mix_params, move_params, bc_params = PSP_motion_bc_params(omega_bar, omega_sigma
 
 # no_psp_motion_model!(base_filename[1:end-1],turb_k_e, nt, dt, np, ic, move_params, mix_params, psi_mesh, space_cells, bc_params, true, 5, record_moments=true)
 
-(bc_params.bc_k*sqrt(pi*bc_params.B/(bc_params.C_0*turb_k_e))>1) && (@warn "reaction prob >1, setting maximum realised bc_k"; @show bc_k=1/sqrt(pi*bc_params.B/(bc_params.C_0*turb_k_e)))
+(bc_params.bc_k*sqrt(2*pi*bc_params.B/(bc_params.C_0*turb_k_e))>1) && (@warn "reaction prob >1, setting maximum realised bc_k"; @show bc_k=1/sqrt(2*pi*bc_params.B/(bc_params.C_0*turb_k_e)))
 # error("test")
 # @warn "full bc_k not realised"
 
 if PSP_on 
-    ProfileView.@profview PSP_model!(base_filename[1:end-1],turb_k_e, nt, dt, np, ic, move_params, mix_params, psi_mesh, space_cells, bc_params, true, 5; record_moments=true, saveing_rate=1) 
+    PSP_model!(base_filename[1:end-1],turb_k_e, nt, dt, np, ic, move_params, mix_params, psi_mesh, space_cells, bc_params, true, 5; record_moments=true, saveing_rate=1) 
 else
     no_psp_motion_model!(base_filename[1:end-1],turb_k_e, nt, dt, np, ic, move_params, mix_params, psi_mesh, space_cells, bc_params, true, 5, record_moments=true)
 end
